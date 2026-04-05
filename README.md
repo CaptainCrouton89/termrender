@@ -104,15 +104,15 @@ And termrender produces this:
 ```
 ┌─ Deploy — api-gateway v3.2.0 ──────────────────────────────────────────────┐
 │ Completed at 14:32 UTC on prod-us-east-1. Health checks passing.           │
-│ ┌─ Services ───────────────────────────┐ ┌─ ✔ Success ─────────────────┐  │
-│ │ api-gateway/ ✔                      │ │ 6 of 7 services healthy      │  │
-│ │ ├── auth/ ✔                         │ └──────────────────────────────┘  │
-│ │ ├── rate-limiter/ ✔                 │ ┌─ ⚠ Warning ─────────────────┐  │
-│ │ └── cache/ ✔                        │ │ scheduler: 83% memory GC     │  │
+│ ┌─ Services ───────────────────────────┐ ┌─ ✔ Success ──────────────────┐  │
+│ │ api-gateway/ ✔                       │ │ 6 of 7 services healthy      │  │
+│ │ ├── auth/ ✔                          │ └──────────────────────────────┘  │
+│ │ ├── rate-limiter/ ✔                  │ ┌─ ⚠ Warning ──────────────────┐  │
+│ │ └── cache/ ✔                         │ │ scheduler: 83% memory GC     │  │
 │ │ worker-pool/                         │ │ tuning shipping next release │  │
-│ │ ├── job-runner/ ✔                   │ └──────────────────────────────┘  │
-│ │ ├── scheduler/ ⚠                    │ • p99 latency: 34ms               │
-│ │ └── dead-letter/ ✔                  │ • error rate: 0.02%               │
+│ │ ├── job-runner/ ✔                    │ └──────────────────────────────┘  │
+│ │ ├── scheduler/ ⚠                     │ • p99 latency: 34ms               │
+│ │ └── dead-letter/ ✔                   │ • error rate: 0.02%               │
 │ └──────────────────────────────────────┘ • throughput: 12.4k req/s         │
 │ ──────────────────────────────── rollback ──────────────────────────────── │
 │ ┌─ bash ─────────────────────────────────────────────────────────────────┐ │
@@ -121,6 +121,7 @@ And termrender produces this:
 │ │ kubectl rollout status deployment/api-gateway -n prod                  │ │
 │ └────────────────────────────────────────────────────────────────────────┘ │
 │ │ Previous stable: v3.1.4 (deployed 2025-03-28)                            │
+│ │ — deploy-bot                                                             │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -187,11 +188,11 @@ Bordered box with optional title and color.
 
 **Output:**
 ```
-╭─ Migration ───────────────────────╮
-│ Database: migrated (v42 → v43)    │
-│ • Added users.email_verified      │
-│ • Backfilled 2.3M rows in 14s    │
-╰───────────────────────────────────╯
+┌─ Migration ──────────────────────────┐
+│ Database: migrated (v42 → v43)       │
+│ • Added users.email_verified column  │
+│ • Backfilled 2.3M rows in 14s        │
+└──────────────────────────────────────┘
 ```
 
 Colors: `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray`.
@@ -220,10 +221,10 @@ Side-by-side layout. Each `:::col` takes a width as a percentage.
 
 **Output:**
 ```
-Before                    After
-• Manual deploys          • CI/CD pipeline
-• 45 min rollbacks        • 2 min rollbacks
-• No staging env          • Full staging env
+Before                   After
+• Manual deploys         • CI/CD pipeline
+• 45 min rollbacks       • 2 min rollbacks
+• No staging env         • Full staging env
 ```
 
 Good for comparisons, dashboards, anything where you'd otherwise scroll vertically through content that reads better side by side.
@@ -283,21 +284,19 @@ All 847 tests passing. Coverage at 94%.
 
 **Output:**
 ```
-╭─ ⚠ Warning ──────────────────────╮
-│ Rate limiting is enabled on prod. │
-│ Requests over 100/min per IP      │
-│ return 429.                       │
-╰───────────────────────────────────╯
-
-╭─ ✖ Error ─────────────────────────╮
-│ The v2 endpoint is deprecated and │
-│ will be removed May 1st.          │
-╰───────────────────────────────────╯
-
-╭─ ✔ Success ───────────────────────╮
-│ All 847 tests passing. Coverage   │
-│ at 94%.                           │
-╰───────────────────────────────────╯
+┌─ ⚠ Warning ──────────────────────────┐
+│ Rate limiting is enabled on prod.    │
+│ Requests over 100/min per IP return  │
+│ 429.                                 │
+└──────────────────────────────────────┘
+┌─ ✖ Error ────────────────────────────┐
+│ The v2 endpoint is deprecated and    │
+│ will be removed May 1st.             │
+└──────────────────────────────────────┘
+┌─ ✔ Success ──────────────────────────┐
+│ All 847 tests passing. Coverage at   │
+│ 94%.                                 │
+└──────────────────────────────────────┘
 ```
 
 ### Quotes
@@ -314,7 +313,6 @@ Simplicity is complicated.
 **Output:**
 ```
 │ Simplicity is complicated.
-│
 │ — Rob Pike
 ```
 
@@ -337,15 +335,15 @@ def retry(fn, attempts=3):
 
 **Output:**
 ```
-╭─ python ──────────────────────────╮
-│ def retry(fn, attempts=3):        │
-│     for i in range(attempts):     │
-│         try:                      │
-│             return fn()           │
-│         except Exception:         │
-│             if i == attempts - 1: │
-│                 raise             │
-╰───────────────────────────────────╯
+┌─ python ─────────────────────────────┐
+│ def retry(fn, attempts=3):           │
+│     for i in range(attempts):        │
+│         try:                         │
+│             return fn()              │
+│         except Exception:            │
+│             if i == attempts - 1:    │
+│                 raise                │
+└──────────────────────────────────────┘
 ```
 
 Standard fenced code blocks (` ```python `) also work and get the same treatment.
@@ -362,7 +360,7 @@ Horizontal rules with optional centered labels.
 
 **Output:**
 ```
-──────────────── Phase 2 ───────────
+─────────────── Phase 2 ────────────────
 ```
 
 ### Mermaid diagrams
