@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-04-05)
+
+### Documentation
+
+- Update CLAUDE.md notes for mermaid, tmux, and layout
+  ([`9e104d5`](https://github.com/CaptainCrouton89/termrender/commit/9e104d5ee7bad9a57902e79586c02b0e8d80c589))
+
+### Features
+
+- **cli**: Auto-size tmux pane to fit rendered content
+  ([`91f0414`](https://github.com/CaptainCrouton89/termrender/commit/91f0414d0bf8bfbe4d7167159b928ed9c736db74))
+
+- **mermaid**: Pass width and vertical padding to mermaid-ascii
+  ([`96145c2`](https://github.com/CaptainCrouton89/termrender/commit/96145c2789a52a4d94e9bc5f4adf7f3a88d8501f))
+
+- **table**: Auto-wrap cell content when columns overflow
+  ([`0fae56f`](https://github.com/CaptainCrouton89/termrender/commit/0fae56f8f00260c3263671df9a63a5bea17820bb))
+
+When a table exceeds available width, cells now wrap text within their proportionally-shrunk column
+  widths instead of overflowing. Layout height calculation updated to account for multi-line cells.
+
+
 ## v0.2.1 (2026-04-05)
 
 ### Bug Fixes
