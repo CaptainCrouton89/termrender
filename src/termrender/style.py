@@ -60,13 +60,40 @@ def style(
 
 
 def _char_width(c: str) -> int:
-    """Return display width of a single character (2 for wide/fullwidth, 1 otherwise)."""
-    return 2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1
+    """Return display width of a single character."""
+    cat = unicodedata.category(c)
+    # Combining marks and format characters are zero-width
+    if cat.startswith('M') or cat == 'Cf':
+        return 0
+    # East Asian wide/fullwidth
+    if unicodedata.east_asian_width(c) in ('W', 'F'):
+        return 2
+    return 1
 
 
 def visual_len(s: str) -> int:
+    """Return visual display width of string, ignoring ANSI codes."""
     stripped = ANSI_RE.sub('', s)
-    return sum(_char_width(c) for c in stripped)
+    width = 0
+    i = 0
+    chars = list(stripped)
+    while i < len(chars):
+        c = chars[i]
+        cp = ord(c)
+        # Check if next char is VS16 (emoji presentation selector)
+        if i + 1 < len(chars) and ord(chars[i + 1]) == 0xFE0F:
+            cw = _char_width(c)
+            # VS16 makes the preceding char display as 2 cells
+            width += max(cw, 2)
+            i += 2  # skip the VS16
+            continue
+        # VS15 (text presentation) - just skip it
+        if cp == 0xFE0E:
+            i += 1
+            continue
+        width += _char_width(c)
+        i += 1
+    return width
 
 
 def visual_ljust(s: str, width: int) -> str:
