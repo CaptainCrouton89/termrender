@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from termrender.blocks import Block
+from termrender.blocks import Block, InlineSpan
 from termrender.style import style, visual_len, visual_ljust, visual_center, render_spans, wrap_text
 
 
@@ -18,11 +18,65 @@ def _align_cell(text: str, width: int, align: str | None) -> str:
         return visual_ljust(text, width)
 
 
+def _render_span_slice(
+    spans: list[InlineSpan], start: int, end: int, color: bool
+) -> str:
+    """Render the portion of spans covering character range [start, end)."""
+    parts: list[str] = []
+    offset = 0
+    for span in spans:
+        span_start = offset
+        span_end = offset + len(span.text)
+        overlap_start = max(span_start, start)
+        overlap_end = min(span_end, end)
+        if overlap_start < overlap_end:
+            slice_text = span.text[overlap_start - span_start : overlap_end - span_start]
+            if span.code:
+                slice_text = style(slice_text, color="cyan", enabled=color)
+            elif span.bold or span.italic:
+                slice_text = style(slice_text, bold=span.bold, italic=span.italic, enabled=color)
+            parts.append(slice_text)
+        offset = span_end
+        if offset >= end:
+            break
+    return "".join(parts)
+
+
+def _wrap_cell_colored(
+    spans: list[InlineSpan], width: int, color: bool
+) -> list[str]:
+    """Wrap cell content to width, preserving inline styling."""
+    plain = render_spans(spans, False)
+    wrapped = wrap_text(plain, max(width, 1))
+    if not color:
+        return wrapped
+
+    lines: list[str] = []
+    offset = 0
+    for raw_line in wrapped:
+        line_len = len(raw_line)
+        styled = _render_span_slice(spans, offset, offset + line_len, color)
+        lines.append(styled)
+        offset += line_len
+        if offset < len(plain) and plain[offset] == " ":
+            offset += 1
+    return lines
+
+
 def render(block: Block, color: bool) -> list[str]:
     headers: list[list] = block.attrs.get("headers", [])
     rows: list[list[list]] = block.attrs.get("rows", [])
     aligns: list[str | None] = block.attrs.get("aligns", [])
     w = block.width or 80
+
+    # Default theme: blue borders, yellow headers on dim_blue bg (gloam-inspired)
+    border_color = block.attrs.get("border_color", "blue")
+    header_fg = block.attrs.get("header_color", "yellow")
+    header_bg = block.attrs.get("header_bg", "dim_blue")
+
+    def border(text: str) -> str:
+        """Style border characters."""
+        return style(text, color=border_color, dim=True, enabled=color)
 
     n_cols = max(len(headers), max((len(r) for r in rows), default=0))
     if n_cols == 0:
@@ -56,14 +110,20 @@ def render(block: Block, color: bool) -> list[str]:
                 for cw in col_widths
             ]
 
-    # Wrap cell content to column widths
-    wrapped_headers = [wrap_text(rendered_headers[i], col_widths[i]) for i in range(n_cols)]
+    # Wrap cell content to column widths with inline styling
+    header_spans = [headers[i] if i < len(headers) else [] for i in range(n_cols)]
+    wrapped_headers = [_wrap_cell_colored(header_spans[i], col_widths[i], color) for i in range(n_cols)]
+
+    row_spans = [
+        [row[i] if i < len(row) else [] for i in range(n_cols)]
+        for row in rows
+    ]
     wrapped_rows = [
-        [wrap_text(row[i], col_widths[i]) for i in range(n_cols)]
-        for row in rendered_rows
+        [_wrap_cell_colored(rs[i], col_widths[i], color) for i in range(n_cols)]
+        for rs in row_spans
     ]
 
-    def render_multiline_row(wrapped_cells: list[list[str]], bold: bool) -> list[str]:
+    def render_multiline_row(wrapped_cells: list[list[str]], is_header: bool) -> list[str]:
         row_height = max((len(c) for c in wrapped_cells), default=1)
         out: list[str] = []
         for line_idx in range(row_height):
@@ -72,24 +132,27 @@ def render(block: Block, color: bool) -> list[str]:
                 text = cell_lines[line_idx] if line_idx < len(cell_lines) else ""
                 align = aligns[i] if i < len(aligns) else None
                 padded = _align_cell(text, col_widths[i], align)
-                if bold and color:
-                    padded = style(padded, bold=True)
-                parts.append(" " + padded + " ")
-            line = "│" + "│".join(parts) + "│"
+                if is_header and color:
+                    padded = style(" " + padded + " ", bold=True, color=header_fg, bg=header_bg)
+                else:
+                    padded = " " + padded + " "
+                parts.append(padded)
+            line = border("│") + border("│").join(parts) + border("│")
             out.append(visual_ljust(line, w))
         return out
 
     def separator(left: str, mid: str, right: str) -> str:
         segs = ["─" * (col_widths[i] + 2) for i in range(n_cols)]
-        line = left + mid.join(segs) + right
+        raw = left + mid.join(segs) + right
+        line = style(raw, color=border_color, dim=True, enabled=color)
         return visual_ljust(line, w)
 
     lines: list[str] = []
     lines.append(separator("┌", "┬", "┐"))
-    lines.extend(render_multiline_row(wrapped_headers, bold=True))
+    lines.extend(render_multiline_row(wrapped_headers, is_header=True))
     lines.append(separator("├", "┼", "┤"))
     for wr in wrapped_rows:
-        lines.extend(render_multiline_row(wr, bold=False))
+        lines.extend(render_multiline_row(wr, is_header=False))
     lines.append(separator("└", "┴", "┘"))
 
     return lines

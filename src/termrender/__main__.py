@@ -160,6 +160,23 @@ def main() -> None:
 
     # --tmux: render in a new tmux side pane, sized to fit
     if args.tmux:
+        # Validate syntax before creating pane — fail fast to caller's terminal
+        try:
+            from termrender.parser import parse as _parse
+            _parse(source)
+        except DirectiveError as e:
+            _error(
+                f"syntax error: {e}",
+                fix="check directive openers have matching ::: closers and attribute syntax is key=\"value\"",
+                code=EXIT_SYNTAX,
+            )
+        except ValueError as e:
+            _error(
+                f"nesting error: {e}",
+                fix="reduce directive nesting depth (max 50 levels)",
+                code=EXIT_SYNTAX,
+            )
+
         import shlex
         import subprocess
         import tempfile
@@ -211,7 +228,8 @@ def main() -> None:
             cmd_parts.append("--cjk")
         cmd_parts.extend(["-w", str(pane_width)])
 
-        pane_cmd = " ".join(cmd_parts) + " | less -R; rm -f " + shlex.quote(tmpfile)
+        # TERMRENDER_COLOR=1 forces color on despite stdout piping to less
+        pane_cmd = "TERMRENDER_COLOR=1 " + " ".join(cmd_parts) + " | less -R; rm -f " + shlex.quote(tmpfile)
 
         try:
             subprocess.run(
@@ -249,7 +267,10 @@ def main() -> None:
         sys.exit(EXIT_OK)
 
     try:
-        output = render(source, width=args.width, color=not args.no_color)
+        use_color = not args.no_color and (
+            sys.stdout.isatty() or os.environ.get("TERMRENDER_COLOR") == "1"
+        )
+        output = render(source, width=args.width, color=use_color)
     except TerminalError as e:
         _error(
             f"terminal error: {e}",

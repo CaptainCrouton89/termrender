@@ -12,7 +12,9 @@
 
 ## Directive nesting: depth counter, not stack entries
 
-The parser tracks nested directives of the same type with a `depth` integer inside the top stack entry, not separate stack entries (parser.py:241–306). A closer `:::` only pops the stack when `depth == 1`; otherwise it decrements depth and treats the closer as body content. Consequence: innermost closers appear verbatim in the body of the parent and are re-parsed on the recursive `parse()` call at line 351.
+The parser handles two directive syntaxes through different passes: colon directives (`:::name`) are extracted in pass 1 via regex in `_split_directives`, while backtick fence directives (`` ```{name} ``) are resolved in pass 2 via mistune's AST walk in `_convert_ast`. Both paths funnel through `_directive_to_block` for block construction.
+
+For colon directives, the parser tracks nesting with a `depth` integer inside the top stack entry, not separate stack entries (parser.py:241–306). A closer `:::` only pops the stack when `depth == 1`; otherwise it decrements depth and treats the closer as body content. Consequence: innermost closers appear verbatim in the body of the parent and are re-parsed on the recursive `parse()` call at line 351.
 
 Max recursion depth is 50; exceeding it raises `ValueError`, not `DirectiveError`. Both the render path and `--check` path in `__main__.py` catch `ValueError` and map it to exit code 2 (`EXIT_SYNTAX`).
 

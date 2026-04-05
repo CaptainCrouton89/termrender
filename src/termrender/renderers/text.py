@@ -57,7 +57,7 @@ def _render_span_slice(
         if overlap_start < overlap_end:
             slice_text = span.text[overlap_start - span_start : overlap_end - span_start]
             if span.code:
-                slice_text = style(slice_text, dim=True, enabled=color)
+                slice_text = style(slice_text, color="cyan", enabled=color)
             elif span.bold or span.italic:
                 slice_text = style(slice_text, bold=span.bold, italic=span.italic, enabled=color)
             parts.append(slice_text)
@@ -67,16 +67,27 @@ def _render_span_slice(
     return "".join(parts)
 
 
+# Gloam-inspired heading colors: colored fg + dim tinted bg, by depth
+_HEADING_STYLES: dict[int, dict[str, str]] = {
+    1: {"color": "yellow", "bg": "dim_yellow"},
+    2: {"color": "green", "bg": "dim_green"},
+    3: {"color": "cyan", "bg": "dim_cyan"},
+    4: {"color": "blue", "bg": "dim_blue"},
+    5: {"color": "magenta", "bg": "dim_magenta"},
+}
+
+
 def _render_heading(block: Block, color: bool) -> list[str]:
     level = block.attrs.get("level", 1)
     text = render_spans(block.text, color=False)  # plain text first
 
-    if level == 1:
-        styled = style(text, color="blue", bold=True, enabled=color)
-    elif level == 2:
+    heading_style = _HEADING_STYLES.get(level)
+    if heading_style and color:
+        # Pad text to full width BEFORE styling so bg extends across the line
+        padded = visual_ljust(text, block.width)
+        styled = style(padded, bold=True, enabled=True, **heading_style)
+    elif level <= 2:
         styled = style(text, bold=True, enabled=color)
-    elif level == 3:
-        styled = style(text, italic=True, enabled=color)
     else:
         styled = style(text, dim=True, enabled=color)
 

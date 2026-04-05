@@ -11,6 +11,7 @@ def render_box(
     color: bool,
     title: str | None = None,
     border_color: str | None = None,
+    title_color: str | None = None,
     dim: bool = False,
 ) -> list[str]:
     """Render content lines inside a box-drawing border.
@@ -21,6 +22,7 @@ def render_box(
         color: Whether ANSI styling is enabled.
         title: Optional title to display in the top border.
         border_color: Color name for the border (used by panels).
+        title_color: Color for the title text (defaults to border_color).
         dim: Whether to dim the border (used by code blocks).
     """
     # Calculate border character widths dynamically
@@ -46,11 +48,19 @@ def render_box(
         title_visual = visual_len(title_part)
         remaining = inner_w - title_visual
         fill_count = max(0, remaining // dash_v)
-        top_raw = "┌" + title_part + "─" * fill_count + "┐"
+        if title_color and color:
+            # Style title text separately from border chrome
+            styled_title = style(title, color=title_color, bold=True)
+            border_prefix = style("┌─ ", **style_kw)
+            border_suffix = style(" " + "─" * fill_count + "┐", **style_kw)
+            top = border_prefix + styled_title + border_suffix
+        else:
+            top_raw = "┌" + title_part + "─" * fill_count + "┐"
+            top = style(top_raw, **style_kw)
     else:
         fill_count = max(0, inner_w // dash_v)
         top_raw = "┌" + "─" * fill_count + "┐"
-    top = style(top_raw, **style_kw)
+        top = style(top_raw, **style_kw)
     top = visual_ljust(top, width)
 
     # Bottom border

@@ -36,12 +36,12 @@ def _sanitize_text(text: str) -> str:
     """Strip non-SGR ANSI escape sequences from text."""
     return _UNSAFE_ANSI_RE.sub('', text)
 
-# Directive opener: :::name or :::name{attrs}
+# Directive opener: :::name or ::::name etc. (3+ colons)
 _DIRECTIVE_OPEN = re.compile(
-    r"^:::(\w+)(?:\{([^}]*)\})?\s*$"
+    r"^(:{3,})(\w+)(?:\{([^}]*)\})?\s*$"
 )
-# Directive closer: exactly ::: on its own line
-_DIRECTIVE_CLOSE = re.compile(r"^:::\s*$")
+# Directive closer: 3+ colons on its own line
+_DIRECTIVE_CLOSE = re.compile(r"^(:{3,})\s*$")
 
 # Attribute parser: key=value or key="quoted value"
 _ATTR_PAIR = re.compile(
@@ -61,6 +61,14 @@ _DIRECTIVE_TO_BLOCK: dict[str, BlockType] = {
 
 _SELF_CLOSING_DIRECTIVES = frozenset({"divider"})
 
+# MyST backtick fence directive: ```{name} optional-argument
+_BACKTICK_DIRECTIVE_RE = re.compile(r"^\{(\w[\w-]*)\}(.*)")
+
+# MyST option line: :key: value — intentionally requires a value after the key
+# (the \s+(.+) part). Flag-style options like :nosandbox: (no value) won't match
+# and will be treated as body content.
+_OPTION_LINE_RE = re.compile(r"^:(\w[\w-]*):\s+(.+)$")
+
 _mistune_md = mistune.create_markdown(renderer="ast", plugins=["table"])
 
 
@@ -71,7 +79,7 @@ def _any_self_closing_before(lines: list[str], close_idx: int) -> bool:
         if not line:
             continue
         m = _DIRECTIVE_OPEN.match(lines[j])
-        if m and m.group(1) in _SELF_CLOSING_DIRECTIVES:
+        if m and m.group(2) in _SELF_CLOSING_DIRECTIVES:
             return True
         return False
     return False
@@ -117,7 +125,40 @@ def _convert_inline(nodes: list[dict]) -> list[InlineSpan]:
     return spans
 
 
-def _convert_ast(nodes: list[dict]) -> list[Block]:
+def _strip_options(body: str) -> tuple[dict[str, str], str]:
+    """Strip MyST option lines from the start of a directive body.
+
+    Option lines have the form `:key: value` and appear at the start of the body.
+    Blank lines between option lines are allowed. Scanning stops at the first
+    non-option, non-blank line.
+
+    Returns (options_dict, remaining_body).
+    """
+    if not body or not body.lstrip("\n").startswith(":"):
+        return {}, body
+    lines = body.split("\n")
+    options: dict[str, str] = {}
+    last_option_idx = -1
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            # blank lines are OK between options
+            continue
+        m = _OPTION_LINE_RE.match(stripped)
+        if m:
+            options[m.group(1)] = m.group(2)
+            last_option_idx = i
+        else:
+            break
+    if last_option_idx == -1:
+        return {}, body
+    remaining = "\n".join(lines[last_option_idx + 1:])
+    # Strip leading blank lines from remaining body
+    remaining = remaining.lstrip("\n")
+    return options, remaining
+
+
+def _convert_ast(nodes: list[dict], _depth: int = 0) -> list[Block]:
     """Convert mistune AST nodes into Block tree."""
     blocks: list[Block] = []
     for node in nodes:
@@ -142,7 +183,24 @@ def _convert_ast(nodes: list[dict]) -> list[Block]:
         elif ntype == "block_code":
             raw = node.get("raw", "")
             info = node.get("attrs", {}).get("info", "")
-            if info == "mermaid":
+            # MyST backtick fence directive: ```{name} optional-arg
+            m_directive = _BACKTICK_DIRECTIVE_RE.match(info) if info else None
+            if m_directive:
+                dir_name = m_directive.group(1)
+                arg_text = m_directive.group(2).strip()
+                if dir_name == "mermaid":
+                    options, body = _strip_options(raw)
+                    attrs = dict(options)
+                    if arg_text:
+                        attrs["argument"] = arg_text
+                    attrs["source"] = body
+                    blocks.append(Block(type=BlockType.MERMAID, attrs=attrs))
+                else:
+                    attrs: dict[str, Any] = {}
+                    if arg_text:
+                        attrs["argument"] = arg_text
+                    blocks.append(_directive_to_block(dir_name, attrs, raw, _depth=_depth))
+            elif info == "mermaid":
                 blocks.append(Block(
                     type=BlockType.MERMAID,
                     attrs={"source": raw},
@@ -166,7 +224,7 @@ def _convert_ast(nodes: list[dict]) -> list[Block]:
                         if child["type"] == "block_text":
                             item_spans.extend(_convert_inline(child.get("children", [])))
                         else:
-                            sub_blocks.extend(_convert_ast([child]))
+                            sub_blocks.extend(_convert_ast([child], _depth=_depth))
                     items.append(Block(
                         type=BlockType.LIST_ITEM,
                         text=item_spans,
@@ -209,23 +267,23 @@ def _convert_ast(nodes: list[dict]) -> list[Block]:
             blocks.append(Block(type=BlockType.DIVIDER))
 
         elif ntype == "block_quote":
-            children = _convert_ast(node.get("children", []))
+            children = _convert_ast(node.get("children", []), _depth=_depth)
             blocks.append(Block(type=BlockType.QUOTE, children=children))
 
         else:
             # Unknown block type - try to extract any content
             if "children" in node:
-                blocks.extend(_convert_ast(node["children"]))
+                blocks.extend(_convert_ast(node["children"], _depth=_depth))
 
     return blocks
 
 
-def _parse_markdown(source: str) -> list[Block]:
+def _parse_markdown(source: str, _depth: int = 0) -> list[Block]:
     """Parse a markdown string via mistune and convert to Block list."""
     if not source.strip():
         return []
     ast_nodes = _mistune_md(source)
-    return _convert_ast(ast_nodes)
+    return _convert_ast(ast_nodes, _depth=_depth)
 
 
 def _split_directives(source: str) -> list[dict]:
@@ -247,6 +305,9 @@ def _split_directives(source: str) -> list[dict]:
         # Check for directive opener
         m_open = _DIRECTIVE_OPEN.match(line)
         if m_open:
+            colons = m_open.group(1)
+            name = m_open.group(2)
+            attrs_raw = m_open.group(3)
             if not stack:
                 # Top-level directive opening — flush accumulated markdown
                 if current_md_lines:
@@ -256,13 +317,14 @@ def _split_directives(source: str) -> list[dict]:
                     })
                     current_md_lines = []
                 entry = {
-                    "name": m_open.group(1),
-                    "attrs_raw": m_open.group(2),
+                    "name": name,
+                    "attrs_raw": attrs_raw,
                     "body_lines": [],
                     "depth": 1,
+                    "colon_count": len(colons),
                 }
                 # Self-closing directives (no body content expected)
-                if entry["name"] in ("divider",):
+                if entry["name"] in _SELF_CLOSING_DIRECTIVES:
                     segments.append({
                         "type": "directive",
                         "name": entry["name"],
@@ -272,8 +334,9 @@ def _split_directives(source: str) -> list[dict]:
                 else:
                     stack.append(entry)
             else:
-                # Nested directive — track depth and include line in body
-                stack[-1]["depth"] += 1
+                # Nested directive — track depth only if colon count matches
+                if len(colons) == stack[-1]["colon_count"]:
+                    stack[-1]["depth"] += 1
                 stack[-1]["body_lines"].append(line)
             i += 1
             continue
@@ -282,15 +345,20 @@ def _split_directives(source: str) -> list[dict]:
         m_close = _DIRECTIVE_CLOSE.match(line)
         if m_close and not stack:
             if not _any_self_closing_before(lines, i):
+                close_colons = m_close.group(1)
                 raise DirectiveError(
-                    f"line {i + 1}: stray ':::' closer with no open directive"
+                    f"line {i + 1}: stray '{close_colons}' closer with no open directive"
                 )
             # Stray closer after a self-closing directive like divider — skip
             i += 1
             continue
         if m_close and stack:
-            if stack[-1]["depth"] > 1:
-                # Closing a nested directive
+            close_colon_count = len(m_close.group(1))
+            if close_colon_count != stack[-1]["colon_count"]:
+                # Different colon count — treat as body content
+                stack[-1]["body_lines"].append(line)
+            elif stack[-1]["depth"] > 1:
+                # Closing a nested directive with same colon count
                 stack[-1]["depth"] -= 1
                 stack[-1]["body_lines"].append(line)
             else:
@@ -322,10 +390,10 @@ def _split_directives(source: str) -> list[dict]:
     # If stack is not empty, the source has unclosed directives
     if stack:
         unclosed = stack[-1]
-        # Find the line number where this directive was opened
+        colons = ":" * unclosed["colon_count"]
         name = unclosed["name"]
         raise DirectiveError(
-            f"unclosed directive ':::{name}' — missing closing ':::'"
+            f"unclosed directive '{colons}{name}' — missing closing '{colons}'"
         )
 
     return segments
@@ -336,6 +404,12 @@ _MAX_PARSE_DEPTH = 50
 
 def _directive_to_block(name: str, attrs: dict[str, Any], body: str, _depth: int = 0) -> Block:
     """Convert a parsed directive into a Block."""
+    # Strip option lines from body; inline attrs take precedence over options
+    options, body = _strip_options(body)
+    for key, value in options.items():
+        if key not in attrs:
+            attrs[key] = value
+
     block_type = _DIRECTIVE_TO_BLOCK.get(name, BlockType.PANEL)
 
     # Tree and Code directives: store raw body, don't parse as markdown
@@ -368,7 +442,7 @@ def parse(source: str, _depth: int = 0) -> Block:
 
     for seg in segments:
         if seg["type"] == "markdown":
-            children.extend(_parse_markdown(seg["content"]))
+            children.extend(_parse_markdown(seg["content"], _depth=_depth))
         else:
             children.append(_directive_to_block(
                 seg["name"], seg["attrs"], seg["body"], _depth=_depth,

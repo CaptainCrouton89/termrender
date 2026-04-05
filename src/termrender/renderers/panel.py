@@ -12,8 +12,20 @@ def render(
     block: Block, color: bool, render_child: Callable[[Block, bool], list[str]]
 ) -> list[str]:
     """Render a panel block with box-drawing borders."""
-    border_color = block.attrs.get("color")
+    explicit_color = block.attrs.get("color")
     title = block.attrs.get("title")
+
+    # Gloam-inspired defaults: dim gray borders, yellow bold title
+    # Explicit color= attr overrides both (border + title match)
+    if explicit_color:
+        border_color = explicit_color
+        title_color = None  # title inherits border color
+    elif color:
+        border_color = None  # dim only (gray)
+        title_color = "yellow"
+    else:
+        border_color = None
+        title_color = None
 
     # Render children content
     content_lines: list[str] = []
@@ -26,6 +38,8 @@ def render(
         color=color,
         title=title,
         border_color=border_color,
+        title_color=title_color,
+        dim=color and not explicit_color,
     )
 
 

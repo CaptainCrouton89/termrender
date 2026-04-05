@@ -97,6 +97,24 @@ COLOR_MAP: dict[str, str] = {
     'gray': '\x1b[90m',
 }
 
+BG_COLOR_MAP: dict[str, str] = {
+    'red': '\x1b[41m',
+    'green': '\x1b[42m',
+    'yellow': '\x1b[43m',
+    'blue': '\x1b[44m',
+    'magenta': '\x1b[45m',
+    'cyan': '\x1b[46m',
+    'white': '\x1b[47m',
+    'gray': '\x1b[100m',
+    # Dim background variants — use bright-black (dark gray) range
+    'dim_red': '\x1b[48;5;52m',
+    'dim_green': '\x1b[48;5;22m',
+    'dim_yellow': '\x1b[48;5;58m',
+    'dim_blue': '\x1b[48;5;17m',
+    'dim_magenta': '\x1b[48;5;53m',
+    'dim_cyan': '\x1b[48;5;23m',
+}
+
 
 def resolve_color(name: str | None) -> str:
     if name is None:
@@ -104,9 +122,16 @@ def resolve_color(name: str | None) -> str:
     return COLOR_MAP.get(name, '')
 
 
+def resolve_bg_color(name: str | None) -> str:
+    if name is None:
+        return ''
+    return BG_COLOR_MAP.get(name, '')
+
+
 def style(
     text: str,
     color: str | None = None,
+    bg: str | None = None,
     bold: bool = False,
     italic: bool = False,
     dim: bool = False,
@@ -115,6 +140,7 @@ def style(
     if not enabled:
         return text
     prefix = resolve_color(color)
+    prefix += resolve_bg_color(bg)
     if bold:
         prefix += BOLD
     if italic:
@@ -246,7 +272,7 @@ def render_spans(spans: list[InlineSpan], color: bool) -> str:
     for span in spans:
         text = span.text
         if span.code:
-            text = style(text, dim=True, enabled=color)
+            text = style(text, color="cyan", enabled=color)
         elif span.bold or span.italic:
             text = style(text, bold=span.bold, italic=span.italic, enabled=color)
         parts.append(text)
