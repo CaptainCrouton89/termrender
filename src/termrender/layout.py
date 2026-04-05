@@ -113,8 +113,30 @@ def resolve_height(block: Block) -> None:
         block.height = len(source.split("\n")) if source else 1
 
     elif bt == BlockType.TABLE:
+        headers = block.attrs.get("headers", [])
         rows = block.attrs.get("rows", [])
-        block.height = len(rows) + 4  # top border + header + separator + data rows + bottom border
+        n_cols = max(len(headers), max((len(r) for r in rows), default=0))
+        if n_cols == 0:
+            block.height = 0
+        else:
+            rh = [_plain_text(headers[i]) if i < len(headers) else "" for i in range(n_cols)]
+            rr = [[_plain_text(row[i]) if i < len(row) else "" for i in range(n_cols)] for row in rows]
+            col_widths = [
+                max(3, visual_len(rh[i]), *(visual_len(r[i]) for r in rr))
+                for i in range(n_cols)
+            ]
+            total = sum(col_widths) + n_cols * 2 + (n_cols + 1)
+            if total > width:
+                avail = max(width - n_cols * 2 - (n_cols + 1), n_cols * 3)
+                total_natural = sum(col_widths)
+                if total_natural > 0:
+                    col_widths = [max(3, round(cw / total_natural * avail)) for cw in col_widths]
+            header_h = max(len(wrap_text(rh[i], col_widths[i])) for i in range(n_cols))
+            data_h = sum(
+                max(len(wrap_text(r[i], col_widths[i])) for i in range(n_cols))
+                for r in rr
+            ) if rr else 0
+            block.height = header_h + data_h + 3  # top border + header sep + bottom border
 
     elif bt == BlockType.MERMAID:
         source = block.attrs.get("source", "") or _plain_text(block.text)

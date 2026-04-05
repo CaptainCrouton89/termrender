@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from termrender.blocks import Block
-from termrender.style import style, visual_len, visual_ljust, visual_center, render_spans
+from termrender.style import style, visual_len, visual_ljust, visual_center, render_spans, wrap_text
 
 
 def _align_cell(text: str, width: int, align: str | None) -> str:
@@ -56,16 +56,28 @@ def render(block: Block, color: bool) -> list[str]:
                 for cw in col_widths
             ]
 
-    def render_row(cells: list[str], bold: bool) -> str:
-        parts: list[str] = []
-        for i, cell in enumerate(cells):
-            align = aligns[i] if i < len(aligns) else None
-            padded = _align_cell(cell, col_widths[i], align)
-            if bold and color:
-                padded = style(padded, bold=True)
-            parts.append(" " + padded + " ")
-        line = "│" + "│".join(parts) + "│"
-        return visual_ljust(line, w)
+    # Wrap cell content to column widths
+    wrapped_headers = [wrap_text(rendered_headers[i], col_widths[i]) for i in range(n_cols)]
+    wrapped_rows = [
+        [wrap_text(row[i], col_widths[i]) for i in range(n_cols)]
+        for row in rendered_rows
+    ]
+
+    def render_multiline_row(wrapped_cells: list[list[str]], bold: bool) -> list[str]:
+        row_height = max((len(c) for c in wrapped_cells), default=1)
+        out: list[str] = []
+        for line_idx in range(row_height):
+            parts: list[str] = []
+            for i, cell_lines in enumerate(wrapped_cells):
+                text = cell_lines[line_idx] if line_idx < len(cell_lines) else ""
+                align = aligns[i] if i < len(aligns) else None
+                padded = _align_cell(text, col_widths[i], align)
+                if bold and color:
+                    padded = style(padded, bold=True)
+                parts.append(" " + padded + " ")
+            line = "│" + "│".join(parts) + "│"
+            out.append(visual_ljust(line, w))
+        return out
 
     def separator(left: str, mid: str, right: str) -> str:
         segs = ["─" * (col_widths[i] + 2) for i in range(n_cols)]
@@ -74,10 +86,10 @@ def render(block: Block, color: bool) -> list[str]:
 
     lines: list[str] = []
     lines.append(separator("┌", "┬", "┐"))
-    lines.append(render_row(rendered_headers, bold=True))
+    lines.extend(render_multiline_row(wrapped_headers, bold=True))
     lines.append(separator("├", "┼", "┤"))
-    for r in rendered_rows:
-        lines.append(render_row(r, bold=False))
+    for wr in wrapped_rows:
+        lines.extend(render_multiline_row(wr, bold=False))
     lines.append(separator("└", "┴", "┘"))
 
     return lines
