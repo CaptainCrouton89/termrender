@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-04-05)
+
+### Features
+
+- **parser**: Variable colon counts, backtick fence directives, and gloam-inspired theming
+  ([`47fac7f`](https://github.com/CaptainCrouton89/termrender/commit/47fac7fcf13d33e5d9986d3f9ca42ddaf5e7207d))
+
+Parser changes: - Support 3+ colon openers/closers with stack-based matching - Backtick fence
+  directive syntax (```{name}) via mistune AST interception - Option line stripping (:key: value)
+  into directive attrs
+
+CLI changes: - Syntax validation before tmux pane creation (no orphan panes on bad input) - TTY
+  auto-detect for color (disabled when piping, forced in tmux subprocess)
+
+Theming (gloam-inspired defaults): - Headings: depth-based colored fg + dim tinted bg
+  (yellow→green→cyan→blue→magenta) - Inline code: cyan (aqua) - Panel borders: dim gray with yellow
+  bold titles - Table borders: blue dim, headers: yellow bold on dim-blue bg - Background color
+  support added to style()
+
+24 new tests across two test files.
+
+
 ## v0.3.0 (2026-04-05)
 
 ### Documentation
