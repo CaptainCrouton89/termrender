@@ -46,6 +46,14 @@ Max recursion depth is 50; exceeding it raises `ValueError`, not `DirectiveError
 
 `__init__.py:30–31` calls `set_ambiguous_width(2)` on every `render()` call when `TERMRENDER_CJK` is set. The CLI `--cjk` flag sets `os.environ["TERMRENDER_CJK"]` (not the function directly), so it persists for the entire process. In multi-render programmatic usage, setting this env var before the first `render()` permanently widens ambiguous-width for all subsequent renders in the same process (no reset path — see `_ambiguous_width` note above).
 
+## `--tmux` exits immediately; exit code reflects pane creation, not render success
+
+`__main__.py:202`: after `tmux split-window` succeeds, the parent exits `EXIT_OK` immediately — the pane renders asynchronously. Render errors (syntax, layout, terminal) surface only inside the pane, not to the caller.
+
+`--check` is silently dropped when combined with `--tmux`: the `--tmux` branch exits at line 202 before the `--check` branch at line 205.
+
+Tempfile cleanup is embedded in the pane's shell string as `... | less -R; rm -f <tmpfile>` (line 187). If `less` is killed abnormally (SIGKILL, closed session), the `rm` never runs and `/tmp/termrender-*.md` leaks.
+
 ## `_EMOJI_WIDE_RANGES` must stay sorted by codepoint
 
 `_char_width()` (style.py:144) exits the range scan early on `cp < lo`, assuming all ranges are in ascending codepoint order. Adding a new range out of order causes the early exit to skip ranges with higher `lo` values, silently misclassifying those codepoints as 1-wide.
