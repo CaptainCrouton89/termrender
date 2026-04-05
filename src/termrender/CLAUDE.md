@@ -41,3 +41,7 @@ Max recursion depth is 50; exceeding it raises `ValueError`, not `DirectiveError
 ## `TERMRENDER_CJK` env var is the only public trigger for ambiguous-width
 
 `__init__.py:30–31` calls `set_ambiguous_width(2)` on every `render()` call when `TERMRENDER_CJK` is set. The CLI `--cjk` flag sets `os.environ["TERMRENDER_CJK"]` (not the function directly), so it persists for the entire process. In multi-render programmatic usage, setting this env var before the first `render()` permanently widens ambiguous-width for all subsequent renders in the same process (no reset path — see `_ambiguous_width` note above).
+
+## `_EMOJI_WIDE_RANGES` must stay sorted by codepoint
+
+`_char_width()` (style.py:144) exits the range scan early on `cp < lo`, assuming all ranges are in ascending codepoint order. Adding a new range out of order causes the early exit to skip ranges with higher `lo` values, silently misclassifying those codepoints as 1-wide.

@@ -36,7 +36,7 @@ With termrender, the agent writes this instead:
 :::
 ```
 
-Same visual result. About 10 tokens of directive syntax versus 200+ tokens of manual box drawing. The agent writes structure. termrender handles pixels.
+Same visual result. About 40 tokens of directive syntax versus 200+ tokens of manual box drawing. The agent writes structure. termrender handles pixels.
 
 Output tokens are the bottleneck in LLM-powered tools. They're slower to produce than input tokens and they eat context window. Cutting 95% of the formatting overhead means faster responses and more room for the content that actually matters.
 
