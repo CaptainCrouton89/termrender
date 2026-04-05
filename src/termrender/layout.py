@@ -143,7 +143,7 @@ def resolve_height(block: Block) -> None:
         rendered = source  # fallback
         try:
             result = subprocess.run(
-                ["mermaid-ascii", "-f", "-"],
+                ["mermaid-ascii", "-f", "-", "-w", str(block.width or 80), "-y", "1"],
                 input=source,
                 capture_output=True,
                 text=True,

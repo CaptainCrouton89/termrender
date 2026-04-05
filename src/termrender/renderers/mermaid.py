@@ -31,7 +31,7 @@ def render(block: Block, color: bool) -> list[str]:
         source = block.attrs.get("source", "")
         try:
             result = subprocess.run(
-                ["mermaid-ascii", "-f", "-"],
+                ["mermaid-ascii", "-f", "-", "-w", str(block.width or 80), "-y", "1"],
                 input=source,
                 capture_output=True,
                 text=True,
