@@ -151,7 +151,9 @@ def render(block: Block, color: bool) -> list[str]:
     lines.append(separator("┌", "┬", "┐"))
     lines.extend(render_multiline_row(wrapped_headers, is_header=True))
     lines.append(separator("├", "┼", "┤"))
-    for wr in wrapped_rows:
+    for idx, wr in enumerate(wrapped_rows):
+        if idx > 0:
+            lines.append(separator("├", "┼", "┤"))
         lines.extend(render_multiline_row(wr, is_header=False))
     lines.append(separator("└", "┴", "┘"))
 

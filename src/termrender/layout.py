@@ -136,7 +136,8 @@ def resolve_height(block: Block) -> None:
                 max(len(wrap_text(r[i], col_widths[i])) for i in range(n_cols))
                 for r in rr
             ) if rr else 0
-            block.height = header_h + data_h + 3  # top border + header sep + bottom border
+            row_seps = max(len(rr) - 1, 0)  # horizontal lines between data rows
+            block.height = header_h + data_h + 3 + row_seps  # top border + header sep + bottom border + row seps
 
     elif bt == BlockType.MERMAID:
         source = block.attrs.get("source", "") or _plain_text(block.text)
