@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-04-06)
+
+### Features
+
+- **table**: Render horizontal separator lines between data rows
+  ([`3e4c74a`](https://github.com/CaptainCrouton89/termrender/commit/3e4c74a10d63470f2eb2ec096bb47cf41f0b7f70))
+
+
 ## v0.4.0 (2026-04-05)
 
 ### Features
