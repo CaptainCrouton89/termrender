@@ -33,6 +33,13 @@ def _render_span_slice(
             slice_text = span.text[overlap_start - span_start : overlap_end - span_start]
             if span.code:
                 slice_text = style(slice_text, color="cyan", enabled=color)
+            elif span.fg or span.bg:
+                slice_text = style(
+                    slice_text,
+                    color=span.fg, bg=span.bg,
+                    bold=span.bold, italic=span.italic,
+                    enabled=color,
+                )
             elif span.bold or span.italic:
                 slice_text = style(slice_text, bold=span.bold, italic=span.italic, enabled=color)
             parts.append(slice_text)

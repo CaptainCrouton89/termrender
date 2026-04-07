@@ -25,6 +25,12 @@ class BlockType(Enum):
     TABLE = "table"
     LIST = "list"
     LIST_ITEM = "list_item"
+    DIFF = "diff"
+    BAR = "bar"
+    PROGRESS = "progress"
+    GAUGE = "gauge"
+    STAT = "stat"
+    TIMELINE = "timeline"
 
 
 @dataclass
@@ -35,6 +41,8 @@ class InlineSpan:
     bold: bool = False
     italic: bool = False
     code: bool = False
+    fg: str | None = None
+    bg: str | None = None
 
 
 @dataclass

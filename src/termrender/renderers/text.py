@@ -58,6 +58,13 @@ def _render_span_slice(
             slice_text = span.text[overlap_start - span_start : overlap_end - span_start]
             if span.code:
                 slice_text = style(slice_text, color="cyan", enabled=color)
+            elif span.fg or span.bg:
+                slice_text = style(
+                    slice_text,
+                    color=span.fg, bg=span.bg,
+                    bold=span.bold, italic=span.italic,
+                    enabled=color,
+                )
             elif span.bold or span.italic:
                 slice_text = style(slice_text, bold=span.bold, italic=span.italic, enabled=color)
             parts.append(slice_text)
@@ -94,16 +101,29 @@ def _render_heading(block: Block, color: bool) -> list[str]:
     return [visual_ljust(styled, block.width)]
 
 
+def _task_prefix(item: Block, color: bool) -> str:
+    """Build a checkbox prefix for a list item with `checked`/`pending` attrs."""
+    if item.attrs.get("checked"):
+        return style("☑ ", color="green", enabled=color)
+    if item.attrs.get("pending"):
+        return style("◐ ", color="yellow", enabled=color)
+    return style("☐ ", dim=True, enabled=color)
+
+
 def _render_list(block: Block, color: bool) -> list[str]:
     if not block.children:
         return [visual_ljust("", block.width)]
 
     ordered = block.attrs.get("ordered", False)
+    is_tasklist = block.attrs.get("tasklist", False)
     lines: list[str] = []
 
     for i, child in enumerate(block.children):
         if child.type == BlockType.LIST_ITEM:
-            prefix = f"{i + 1}. " if ordered else "• "
+            if is_tasklist:
+                prefix = _task_prefix(child, color)
+            else:
+                prefix = f"{i + 1}. " if ordered else "• "
             item_lines = _render_list_item(child, prefix, color)
             lines.extend(item_lines)
         elif child.type == BlockType.LIST:
@@ -125,8 +145,9 @@ def _render_list(block: Block, color: bool) -> list[str]:
 
 def _render_list_item(block: Block, prefix: str, color: bool) -> list[str]:
     w = block.width
-    indent = " " * len(prefix)
-    text_width = w - len(prefix)
+    prefix_w = visual_len(prefix)
+    indent = " " * prefix_w
+    text_width = w - prefix_w
 
     if not block.text:
         return [visual_ljust(prefix, w)]
@@ -144,7 +165,7 @@ def _render_list_item(block: Block, prefix: str, color: bool) -> list[str]:
                 children=child.children,
                 text=child.text,
                 attrs=child.attrs,
-                width=w - len(prefix),
+                width=w - prefix_w,
                 height=child.height,
             )
             nested_lines = _render_list(nested, color)

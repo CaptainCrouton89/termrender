@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from termrender.blocks import Block, BlockType
-from termrender.renderers import panel, columns, tree, code, text, divider, quote, mermaid, table
+from termrender.renderers import (
+    panel, columns, tree, code, text, divider, quote, mermaid, table,
+    diff, charts, stat, timeline,
+)
 
 
 def emit_block(block: Block, color: bool) -> list[str]:
@@ -44,6 +47,24 @@ def emit_block(block: Block, color: bool) -> list[str]:
 
         case BlockType.DIVIDER:
             return divider.render(block, color)
+
+        case BlockType.DIFF:
+            return diff.render(block, color)
+
+        case BlockType.BAR:
+            return charts.render_bar(block, color)
+
+        case BlockType.PROGRESS:
+            return charts.render_progress(block, color)
+
+        case BlockType.GAUGE:
+            return charts.render_gauge(block, color)
+
+        case BlockType.STAT:
+            return stat.render(block, color, render_child=emit_block)
+
+        case BlockType.TIMELINE:
+            return timeline.render(block, color)
 
         case _:
             return []

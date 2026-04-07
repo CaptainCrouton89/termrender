@@ -17,7 +17,7 @@ def resolve_width(block: Block, available: int) -> None:
     block.width = available
 
     bt = block.type
-    if bt in (BlockType.PANEL, BlockType.CALLOUT, BlockType.CODE):
+    if bt in (BlockType.PANEL, BlockType.CALLOUT, BlockType.CODE, BlockType.STAT):
         border_overhead = visual_len("│") * 2 + 2  # left border + left pad + right pad + right border
         inner = max(available - border_overhead, 1)
         for child in block.children:
@@ -159,6 +159,41 @@ def resolve_height(block: Block) -> None:
 
     elif bt == BlockType.QUOTE:
         block.height = sum(c.height or 0 for c in block.children) + (1 if block.attrs.get("author") or block.attrs.get("by") else 0)
+
+    elif bt == BlockType.DIFF:
+        source = block.attrs.get("source", "")
+        lines = source.split("\n") if source else [""]
+        # Drop pure-blank trailing line that comes from terminating newline
+        if lines and lines[-1] == "":
+            lines = lines[:-1]
+        block.height = max(len(lines), 1) + 2  # top/bottom border
+
+    elif bt == BlockType.BAR:
+        items = block.attrs.get("items", [])
+        title_h = 1 if block.attrs.get("title") else 0
+        block.height = max(len(items), 1) + title_h
+
+    elif bt == BlockType.PROGRESS:
+        block.height = 1
+
+    elif bt == BlockType.GAUGE:
+        # label line + bar line + value line
+        block.height = 3
+
+    elif bt == BlockType.STAT:
+        # top border + label + value + delta + caption lines + bottom border
+        caption_h = sum(c.height or 0 for c in block.children)
+        delta_h = 1 if block.attrs.get("delta") else 0
+        block.height = 2 + 1 + 1 + delta_h + caption_h  # borders + label + value + delta + caption
+
+    elif bt == BlockType.TIMELINE:
+        entries = block.attrs.get("entries", [])
+        title_h = 1 if block.attrs.get("title") else 0
+        # Each entry takes 1 line + 1 connector line between entries (none after last)
+        if entries:
+            block.height = title_h + len(entries) * 2 - 1
+        else:
+            block.height = max(title_h, 1)
 
     else:
         block.height = sum(c.height or 0 for c in block.children)

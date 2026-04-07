@@ -48,6 +48,12 @@ _ATTR_PAIR = re.compile(
     r"""(\w+)\s*=\s*(?:"([^"]*?)"|(\S+))"""
 )
 
+# Inline role: :role[content]{key=value ...}
+# Used for badges and other inline styled spans.
+_INLINE_ROLE_RE = re.compile(
+    r":(\w+)\[([^\]]*)\](?:\{([^}]*)\})?"
+)
+
 _DIRECTIVE_TO_BLOCK: dict[str, BlockType] = {
     "panel": BlockType.PANEL,
     "columns": BlockType.COLUMNS,
@@ -57,9 +63,16 @@ _DIRECTIVE_TO_BLOCK: dict[str, BlockType] = {
     "quote": BlockType.QUOTE,
     "code": BlockType.CODE,
     "divider": BlockType.DIVIDER,
+    "diff": BlockType.DIFF,
+    "bar": BlockType.BAR,
+    "progress": BlockType.PROGRESS,
+    "gauge": BlockType.GAUGE,
+    "stat": BlockType.STAT,
+    "timeline": BlockType.TIMELINE,
+    "tasklist": BlockType.LIST,  # alias: forces tasklist styling on the inner list
 }
 
-_SELF_CLOSING_DIRECTIVES = frozenset({"divider"})
+_SELF_CLOSING_DIRECTIVES = frozenset({"divider", "progress", "gauge"})
 
 # MyST backtick fence directive: ```{name} optional-argument
 _BACKTICK_DIRECTIVE_RE = re.compile(r"^\{(\w[\w-]*)\}(.*)")
@@ -108,10 +121,16 @@ def _convert_inline(nodes: list[dict]) -> list[InlineSpan]:
             spans.append(InlineSpan(text=node["raw"], code=True))
         elif ntype == "strong":
             for child in _convert_inline(node.get("children", [])):
-                spans.append(InlineSpan(text=child.text, bold=True, italic=child.italic, code=child.code))
+                spans.append(InlineSpan(
+                    text=child.text, bold=True, italic=child.italic, code=child.code,
+                    fg=child.fg, bg=child.bg,
+                ))
         elif ntype == "emphasis":
             for child in _convert_inline(node.get("children", [])):
-                spans.append(InlineSpan(text=child.text, italic=True, bold=child.bold, code=child.code))
+                spans.append(InlineSpan(
+                    text=child.text, italic=True, bold=child.bold, code=child.code,
+                    fg=child.fg, bg=child.bg,
+                ))
         elif ntype == "softbreak":
             spans.append(InlineSpan(text=" "))
         elif ntype == "linebreak":
@@ -122,7 +141,107 @@ def _convert_inline(nodes: list[dict]) -> list[InlineSpan]:
                 spans.append(InlineSpan(text=node["raw"]))
             elif "children" in node:
                 spans.extend(_convert_inline(node["children"]))
-    return spans
+    return _expand_inline_roles(_merge_plain_spans(spans))
+
+
+def _merge_plain_spans(spans: list[InlineSpan]) -> list[InlineSpan]:
+    """Coalesce adjacent spans with identical formatting into one.
+
+    Mistune splits text on `[` and other special characters even when no
+    valid link/image follows, leaving inline role syntax fragmented across
+    multiple text nodes. Merging restores the contiguous text needed for
+    `_expand_inline_roles` to find role patterns.
+    """
+    out: list[InlineSpan] = []
+    for span in spans:
+        if (
+            out
+            and not out[-1].code and not span.code
+            and out[-1].bold == span.bold
+            and out[-1].italic == span.italic
+            and out[-1].fg == span.fg
+            and out[-1].bg == span.bg
+        ):
+            merged = InlineSpan(
+                text=out[-1].text + span.text,
+                bold=span.bold,
+                italic=span.italic,
+                code=False,
+                fg=span.fg,
+                bg=span.bg,
+            )
+            out[-1] = merged
+        else:
+            out.append(span)
+    return out
+
+
+# Map of badge color name -> (fg, bg) pair. Uses dim background tones so the
+# pill reads as subtle but distinct rather than a loud solid block.
+_BADGE_COLORS: dict[str, tuple[str, str]] = {
+    "red": ("red", "dim_red"),
+    "green": ("green", "dim_green"),
+    "yellow": ("yellow", "dim_yellow"),
+    "blue": ("blue", "dim_blue"),
+    "magenta": ("magenta", "dim_magenta"),
+    "cyan": ("cyan", "dim_cyan"),
+    "gray": ("white", "gray"),
+}
+
+
+def _expand_inline_roles(spans: list[InlineSpan]) -> list[InlineSpan]:
+    """Split spans on inline role patterns like :badge[text]{color=green}.
+
+    Code spans are left untouched. Other spans have their text scanned for
+    role matches; matches become new spans with role-specific styling, and
+    surrounding text becomes plain spans inheriting the original formatting.
+    """
+    out: list[InlineSpan] = []
+    for span in spans:
+        if span.code or ":" not in span.text or "[" not in span.text:
+            out.append(span)
+            continue
+        text = span.text
+        last = 0
+        had_match = False
+        for m in _INLINE_ROLE_RE.finditer(text):
+            had_match = True
+            if m.start() > last:
+                out.append(InlineSpan(
+                    text=text[last:m.start()],
+                    bold=span.bold, italic=span.italic, code=span.code,
+                    fg=span.fg, bg=span.bg,
+                ))
+            role = m.group(1)
+            content = m.group(2)
+            attrs = _parse_attrs(m.group(3))
+            if role == "badge":
+                color = attrs.get("color", "blue")
+                fg, bg = _BADGE_COLORS.get(color, _BADGE_COLORS["blue"])
+                out.append(InlineSpan(
+                    text=f" {content} ",
+                    bold=True,
+                    fg=fg,
+                    bg=bg,
+                ))
+            else:
+                # Unknown role — keep raw text so authors notice the typo.
+                out.append(InlineSpan(
+                    text=m.group(0),
+                    bold=span.bold, italic=span.italic,
+                    fg=span.fg, bg=span.bg,
+                ))
+            last = m.end()
+        if not had_match:
+            out.append(span)
+            continue
+        if last < len(text):
+            out.append(InlineSpan(
+                text=text[last:],
+                bold=span.bold, italic=span.italic, code=span.code,
+                fg=span.fg, bg=span.bg,
+            ))
+    return out
 
 
 def _strip_options(body: str) -> tuple[dict[str, str], str]:
@@ -405,14 +524,43 @@ def _directive_to_block(name: str, attrs: dict[str, Any], body: str, _depth: int
 
     block_type = _DIRECTIVE_TO_BLOCK.get(name, BlockType.PANEL)
 
-    # Tree and Code directives: store raw body, don't parse as markdown
-    if block_type in (BlockType.TREE, BlockType.CODE):
+    # Tree, Code, Diff: store raw body, don't parse as markdown
+    if block_type in (BlockType.TREE, BlockType.CODE, BlockType.DIFF):
         attrs["source"] = body
         return Block(type=block_type, attrs=attrs)
 
-    # Divider: no children
-    if block_type == BlockType.DIVIDER:
-        return Block(type=BlockType.DIVIDER, attrs=attrs)
+    # Bar chart: parse body as label:value lines
+    if block_type == BlockType.BAR:
+        attrs["items"] = _parse_bar_items(body)
+        return Block(type=block_type, attrs=attrs)
+
+    # Timeline: parse body as list of date/event entries
+    if block_type == BlockType.TIMELINE:
+        attrs["entries"] = _parse_timeline_entries(body)
+        return Block(type=block_type, attrs=attrs)
+
+    # Divider, progress, gauge: no children, attrs only
+    if block_type in (BlockType.DIVIDER, BlockType.PROGRESS, BlockType.GAUGE):
+        return Block(type=block_type, attrs=attrs)
+
+    # Stat: optional caption body parsed as markdown
+    if block_type == BlockType.STAT:
+        body_doc = parse(body, _depth=_depth + 1) if body.strip() else Block(type=BlockType.DOCUMENT)
+        return Block(type=block_type, children=body_doc.children, attrs=attrs)
+
+    # Tasklist alias: parse body, find the inner list, force tasklist styling
+    if name == "tasklist":
+        body_doc = parse(body, _depth=_depth + 1)
+        for child in body_doc.children:
+            if child.type == BlockType.LIST:
+                child.attrs["tasklist"] = True
+                # Treat any unmarked items as unchecked todo entries.
+                for item in child.children:
+                    if item.type == BlockType.LIST_ITEM and "checked" not in item.attrs:
+                        item.attrs["checked"] = False
+                return child
+        # No list found — return an empty tasklist for graceful degradation
+        return Block(type=BlockType.LIST, attrs={"tasklist": True, **attrs})
 
     # Recursively parse the body through the full two-pass pipeline
     body_doc = parse(body, _depth=_depth + 1)
@@ -421,6 +569,76 @@ def _directive_to_block(name: str, attrs: dict[str, Any], body: str, _depth: int
         children=body_doc.children,
         attrs=attrs,
     )
+
+
+_BAR_ITEM_RE = re.compile(r"^\s*(.+?)\s*[:|]\s*([-+]?\d+(?:\.\d+)?)\s*(\S*)\s*$")
+
+
+def _parse_bar_items(body: str) -> list[dict[str, Any]]:
+    """Parse bar-chart body lines: 'Label: 123' or 'Label | 123 unit'."""
+    items: list[dict[str, Any]] = []
+    for raw in body.split("\n"):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = _BAR_ITEM_RE.match(line)
+        if not m:
+            continue
+        label = m.group(1)
+        try:
+            value = float(m.group(2))
+        except ValueError:
+            continue
+        unit = m.group(3) or ""
+        items.append({"label": label, "value": value, "unit": unit})
+    return items
+
+
+_TIMELINE_ITEM_RE = re.compile(r"^\s*[-*]\s*(.+?)\s*[:|]\s*(.+)$")
+
+
+def _parse_timeline_entries(body: str) -> list[dict[str, str]]:
+    """Parse timeline body lines: '- 2024-01: launched'."""
+    entries: list[dict[str, str]] = []
+    for raw in body.split("\n"):
+        m = _TIMELINE_ITEM_RE.match(raw)
+        if not m:
+            continue
+        entries.append({"date": m.group(1).strip(), "event": m.group(2).strip()})
+    return entries
+
+
+_TASK_MARKER_RE = re.compile(r"^\s*\[([ xX!])\]\s+")
+
+
+def _apply_tasklist_markers(block: Block) -> Block:
+    """Walk a block tree and convert leading [ ]/[x] in list items to checked attrs."""
+    if block.type == BlockType.LIST:
+        any_task = False
+        for item in block.children:
+            if item.type == BlockType.LIST_ITEM and item.text:
+                first_text = item.text[0].text
+                m = _TASK_MARKER_RE.match(first_text)
+                if m:
+                    marker = m.group(1)
+                    item.attrs["checked"] = marker.lower() == "x"
+                    if marker == "!":
+                        item.attrs["pending"] = True
+                    item.text[0] = InlineSpan(
+                        text=first_text[m.end():],
+                        bold=item.text[0].bold,
+                        italic=item.text[0].italic,
+                        code=item.text[0].code,
+                        fg=item.text[0].fg,
+                        bg=item.text[0].bg,
+                    )
+                    any_task = True
+        if any_task:
+            block.attrs["tasklist"] = True
+    # Recurse into children
+    for child in block.children:
+        _apply_tasklist_markers(child)
+    return block
 
 
 def parse(source: str, _depth: int = 0) -> Block:
@@ -440,5 +658,10 @@ def parse(source: str, _depth: int = 0) -> Block:
             children.append(_directive_to_block(
                 seg["name"], seg["attrs"], seg["body"], _depth=_depth,
             ))
+
+    # Walk the tree to auto-promote any markdown list with [ ]/[x] markers
+    # into a tasklist, regardless of whether it sits inside a directive.
+    for child in children:
+        _apply_tasklist_markers(child)
 
     return Block(type=BlockType.DOCUMENT, children=children)

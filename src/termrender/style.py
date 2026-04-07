@@ -273,6 +273,13 @@ def render_spans(spans: list[InlineSpan], color: bool) -> str:
         text = span.text
         if span.code:
             text = style(text, color="cyan", enabled=color)
+        elif span.fg or span.bg:
+            text = style(
+                text,
+                color=span.fg, bg=span.bg,
+                bold=span.bold, italic=span.italic,
+                enabled=color,
+            )
         elif span.bold or span.italic:
             text = style(text, bold=span.bold, italic=span.italic, enabled=color)
         parts.append(text)
