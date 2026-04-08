@@ -1,6 +1,23 @@
 # CHANGELOG
 
 
+## v0.6.1 (2026-04-08)
+
+### Bug Fixes
+
+- **borders**: Grow render_box to fit overflowing content and titles
+  ([`dc108c8`](https://github.com/CaptainCrouton89/termrender/commit/dc108c8242763828245569f719abce64b26ddf5b))
+
+mermaid-ascii's --maxWidth is non-strict, so a child mermaid block can return lines wider than the
+  panel's allocated content area. Previously the side walls floated outward to accommodate the
+  content while the top/bottom borders stayed at the requested width, leaving corner glyphs one
+  column inside the side walls and producing a visibly jagged box.
+
+render_box now measures the widest content line (and the title) and grows its effective width up
+  front so all four borders land at the same column. Trade-off: the box may overflow its parent
+  allocation, but the box itself is internally consistent.
+
+
 ## v0.6.0 (2026-04-07)
 
 ### Features
