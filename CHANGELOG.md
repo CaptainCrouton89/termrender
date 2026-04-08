@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-04-08)
+
+### Features
+
+- **cli**: Add --pane for in-place tmux pane updates
+  ([`4ab1d77`](https://github.com/CaptainCrouton89/termrender/commit/4ab1d77b996aa356926407dcc11c1b408e68e0ee))
+
+--tmux now prints the newly-created pane id to stdout (via split-window -P -F) so callers can
+  capture it for subsequent updates. --pane <ID> targets an existing pane via tmux respawn-pane -k
+  instead of spawning a new one — the existing process is killed and replaced with the new render.
+  This lets agents synchronously re-render a doc on every edit without spawning fresh panes or
+  relying on --watch polling.
+
+Also in this commit: - Expand -h epilog to cover the 8 visualization directives (stat, bar,
+  progress, gauge, diff, timeline, tasklist, inline badge) and rewrite the nesting note to describe
+  the strict colon-count rule. The previous epilog only documented the base directives and said
+  "every opener needs a matching :::", which contradicts the actual parser behavior. - Render
+  tasklist checkboxes as filled/empty dots (● / ○ / ◐) instead of boxed glyphs (☑ / ☐ / ◐).
+
+
 ## v0.6.1 (2026-04-08)
 
 ### Bug Fixes
