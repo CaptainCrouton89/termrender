@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.7.1 (2026-04-08)
+
+### Bug Fixes
+
+- **cli**: Give --pane error paths actionable recovery guidance
+  ([`f857c32`](https://github.com/CaptainCrouton89/termrender/commit/f857c32c89afe32a3a668f03a3d570b0f14dae97))
+
+The two --pane error paths now tell the agent how to recover instead of restating the problem.
+  "Check that the pane id is valid" is a dead end for an agent — it needs either a command to list
+  valid pane ids (tmux list-panes) or a fallback (spawn a fresh pane via --tmux).
+
+
 ## v0.7.0 (2026-04-08)
 
 ### Features
