@@ -405,21 +405,80 @@ def _parse_markdown(source: str, _depth: int = 0) -> list[Block]:
     return _convert_ast(ast_nodes, _depth=_depth)
 
 
-def _split_directives(source: str) -> list[dict]:
+def _find_nested_directives(body_lines: list[str]) -> list[str]:
+    """Return names of directive openers found in body lines."""
+    names: list[str] = []
+    for line in body_lines:
+        m = _DIRECTIVE_OPEN.match(line)
+        if m:
+            names.append(m.group(2))
+    return names
+
+
+def _stray_closer_message(
+    abs_line: int, close_colons: str, trace: list[str],
+    last_closed: dict | None,
+) -> str:
+    """Format a stray-closer error with trace and fix suggestion."""
+    msg = f"line {abs_line}: stray '{close_colons}' closer — no directive is open"
+    if trace:
+        msg += "\n\n  directive trace:\n" + "\n".join(trace)
+
+    if last_closed:
+        nested = _find_nested_directives(last_closed["body_lines"])
+        if nested:
+            outer = last_closed["name"]
+            inner = nested[0]
+            fix_colons = ":" * (last_closed["colon_count"] + 1)
+            msg += (
+                f"\n\n  Likely cause: :::{outer} at line {last_closed['open_line']} "
+                f"contains a nested :::{inner} with the same colon count.\n"
+                f"  The inner ':::' closer (line {last_closed['close_line']}) "
+                f"matched the outer directive instead.\n"
+                f"  Fix: use {fix_colons}{outer} for the outer directive"
+            )
+            return msg
+
+    msg += (
+        "\n\n  Fix: remove this stray closer, or if nesting is intended,\n"
+        "  use more colons on outer directives (::::outer wraps :::inner)"
+    )
+    return msg
+
+
+def _unclosed_directive_message(
+    open_line: int, colons: str, name: str, trace: list[str],
+    body_lines: list[str],
+) -> str:
+    """Format an unclosed-directive error with trace and fix suggestion."""
+    msg = f"line {open_line}: unclosed '{colons}{name}' — add '{colons}' on a new line to close it"
+    if trace:
+        msg += "\n\n  directive trace:\n" + "\n".join(trace)
+    return msg
+
+
+def _split_directives(source: str, _line_offset: int = 0) -> list[dict]:
     """Split source into directive and markdown segments.
 
     Returns a list of segments, each being either:
       {"type": "markdown", "content": str}
-      {"type": "directive", "name": str, "attrs": dict, "body": str}
+      {"type": "directive", "name": str, "attrs": dict, "body": str,
+       "body_start_offset": int}
+
+    On error, raises DirectiveError with a directive trace showing the
+    sequence of opens/closes that led to the error state.
     """
     lines = source.split("\n")
     segments: list[dict] = []
     current_md_lines: list[str] = []
     stack: list[dict] = []  # stack of open directives
+    trace: list[str] = []   # event log for error diagnostics
+    last_closed: dict | None = None  # most recently closed directive entry
 
     i = 0
     while i < len(lines):
         line = lines[i]
+        abs_line = _line_offset + i + 1  # 1-indexed file-absolute line number
 
         # Check for directive opener
         m_open = _DIRECTIVE_OPEN.match(line)
@@ -440,6 +499,8 @@ def _split_directives(source: str) -> list[dict]:
                     "attrs_raw": attrs_raw,
                     "body_lines": [],
                     "colon_count": len(colons),
+                    "open_line": abs_line,
+                    "body_start_offset": _line_offset + i + 1,
                 }
                 # Self-closing directives (no body content expected)
                 if entry["name"] in _SELF_CLOSING_DIRECTIVES:
@@ -448,9 +509,12 @@ def _split_directives(source: str) -> list[dict]:
                         "name": entry["name"],
                         "attrs": _parse_attrs(entry["attrs_raw"]),
                         "body": "",
+                        "body_start_offset": entry["body_start_offset"],
                     })
+                    trace.append(f"    line {abs_line}: {colons}{name}  (self-closing)")
                 else:
                     stack.append(entry)
+                    trace.append(f"    line {abs_line}: {colons}{name}  opened")
             else:
                 # Nested directive — always treat as body content
                 stack[-1]["body_lines"].append(line)
@@ -462,8 +526,9 @@ def _split_directives(source: str) -> list[dict]:
         if m_close and not stack:
             if not _any_self_closing_before(lines, i):
                 close_colons = m_close.group(1)
+                trace.append(f"    line {abs_line}: {close_colons}  stray closer (nothing is open)")
                 raise DirectiveError(
-                    f"line {i + 1}: stray '{close_colons}' closer with no open directive"
+                    _stray_closer_message(abs_line, close_colons, trace, last_closed)
                 )
             # Stray closer after a self-closing directive like divider — skip
             i += 1
@@ -476,11 +541,30 @@ def _split_directives(source: str) -> list[dict]:
             else:
                 # Closing the open directive
                 entry = stack.pop()
+                closed_colons = ":" * entry["colon_count"]
+                nested = _find_nested_directives(entry["body_lines"])
+                nested_note = ""
+                if nested:
+                    names = ", ".join(f":::{n}" for n in nested[:3])
+                    nested_note = f"  — body has nested {names}"
+                trace.append(
+                    f"    line {abs_line}: {closed_colons}  "
+                    f"closed {entry['name']} (opened line {entry['open_line']})"
+                    f"{nested_note}"
+                )
+                last_closed = {
+                    "name": entry["name"],
+                    "colon_count": entry["colon_count"],
+                    "open_line": entry["open_line"],
+                    "close_line": abs_line,
+                    "body_lines": entry["body_lines"],
+                }
                 segments.append({
                     "type": "directive",
                     "name": entry["name"],
                     "attrs": _parse_attrs(entry["attrs_raw"]),
                     "body": "\n".join(entry["body_lines"]),
+                    "body_start_offset": entry["body_start_offset"],
                 })
             i += 1
             continue
@@ -504,8 +588,10 @@ def _split_directives(source: str) -> list[dict]:
         unclosed = stack[-1]
         colons = ":" * unclosed["colon_count"]
         name = unclosed["name"]
+        open_line = unclosed["open_line"]
+        trace.append(f"    line {open_line}: {colons}{name}  ← still open at end of input")
         raise DirectiveError(
-            f"unclosed directive '{colons}{name}' — missing closing '{colons}'"
+            _unclosed_directive_message(open_line, colons, name, trace, unclosed["body_lines"])
         )
 
     return segments
@@ -514,7 +600,7 @@ def _split_directives(source: str) -> list[dict]:
 _MAX_PARSE_DEPTH = 50
 
 
-def _directive_to_block(name: str, attrs: dict[str, Any], body: str, _depth: int = 0) -> Block:
+def _directive_to_block(name: str, attrs: dict[str, Any], body: str, _depth: int = 0, _line_offset: int = 0) -> Block:
     """Convert a parsed directive into a Block."""
     # Strip option lines from body; inline attrs take precedence over options
     options, body = _strip_options(body)
@@ -545,12 +631,12 @@ def _directive_to_block(name: str, attrs: dict[str, Any], body: str, _depth: int
 
     # Stat: optional caption body parsed as markdown
     if block_type == BlockType.STAT:
-        body_doc = parse(body, _depth=_depth + 1) if body.strip() else Block(type=BlockType.DOCUMENT)
+        body_doc = parse(body, _depth=_depth + 1, _line_offset=_line_offset) if body.strip() else Block(type=BlockType.DOCUMENT)
         return Block(type=block_type, children=body_doc.children, attrs=attrs)
 
     # Tasklist alias: parse body, find the inner list, force tasklist styling
     if name == "tasklist":
-        body_doc = parse(body, _depth=_depth + 1)
+        body_doc = parse(body, _depth=_depth + 1, _line_offset=_line_offset)
         for child in body_doc.children:
             if child.type == BlockType.LIST:
                 child.attrs["tasklist"] = True
@@ -563,7 +649,7 @@ def _directive_to_block(name: str, attrs: dict[str, Any], body: str, _depth: int
         return Block(type=BlockType.LIST, attrs={"tasklist": True, **attrs})
 
     # Recursively parse the body through the full two-pass pipeline
-    body_doc = parse(body, _depth=_depth + 1)
+    body_doc = parse(body, _depth=_depth + 1, _line_offset=_line_offset)
     return Block(
         type=block_type,
         children=body_doc.children,
@@ -641,14 +727,14 @@ def _apply_tasklist_markers(block: Block) -> Block:
     return block
 
 
-def parse(source: str, _depth: int = 0) -> Block:
+def parse(source: str, _depth: int = 0, _line_offset: int = 0) -> Block:
     """Parse markdown+directive source into a Block tree.
 
     Returns a Block with type=DOCUMENT as root.
     """
     if _depth > _MAX_PARSE_DEPTH:
         raise ValueError(f"Maximum directive nesting depth ({_MAX_PARSE_DEPTH}) exceeded")
-    segments = _split_directives(source)
+    segments = _split_directives(source, _line_offset=_line_offset)
     children: list[Block] = []
 
     for seg in segments:
@@ -657,6 +743,7 @@ def parse(source: str, _depth: int = 0) -> Block:
         else:
             children.append(_directive_to_block(
                 seg["name"], seg["attrs"], seg["body"], _depth=_depth,
+                _line_offset=seg.get("body_start_offset", 0),
             ))
 
     # Walk the tree to auto-promote any markdown list with [ ]/[x] markers

@@ -298,17 +298,9 @@ def main() -> None:
             from termrender.parser import parse as _parse
             _parse(source)
         except DirectiveError as e:
-            _error(
-                f"syntax error: {e}",
-                fix="check directive openers have matching ::: closers and attribute syntax is key=\"value\"",
-                code=EXIT_SYNTAX,
-            )
+            _error(f"syntax error: {e}", code=EXIT_SYNTAX)
         except ValueError as e:
-            _error(
-                f"nesting error: {e}",
-                fix="reduce directive nesting depth (max 50 levels)",
-                code=EXIT_SYNTAX,
-            )
+            _error(f"nesting error: {e}", code=EXIT_SYNTAX)
 
         import shlex
         import subprocess
@@ -447,17 +439,9 @@ def main() -> None:
             from termrender.parser import parse
             parse(source)
         except DirectiveError as e:
-            _error(
-                f"syntax error: {e}",
-                fix="check directive openers have matching ::: closers and attribute syntax is key=\"value\"",
-                code=EXIT_SYNTAX,
-            )
+            _error(f"syntax error: {e}", code=EXIT_SYNTAX)
         except ValueError as e:
-            _error(
-                f"nesting error: {e}",
-                fix="reduce directive nesting depth (max 50 levels)",
-                code=EXIT_SYNTAX,
-            )
+            _error(f"nesting error: {e}", code=EXIT_SYNTAX)
         print("ok", file=sys.stderr)
         sys.exit(EXIT_OK)
 
@@ -474,18 +458,9 @@ def main() -> None:
             code=EXIT_TERMINAL,
         )
     except DirectiveError as e:
-        _error(
-            f"syntax error: {e}",
-            fix="check directive openers have matching ::: closers and attribute syntax is key=\"value\"",
-            hint="run: termrender --check <file> to validate before rendering",
-            code=EXIT_SYNTAX,
-        )
+        _error(f"syntax error: {e}", code=EXIT_SYNTAX)
     except ValueError as e:
-        _error(
-            f"nesting error: {e}",
-            fix="reduce directive nesting depth (max 50 levels)",
-            code=EXIT_SYNTAX,
-        )
+        _error(f"nesting error: {e}", code=EXIT_SYNTAX)
 
     sys.stdout.write(output)
 
