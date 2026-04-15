@@ -92,8 +92,11 @@ def resolve_height(block: Block) -> None:
 
     elif bt == BlockType.CODE:
         source = block.attrs.get("source") or _plain_text(block.text)
-        code_lines = source.split("\n") if source else [""]
-        block.height = len(code_lines) + 2
+        raw_lines = source.split("\n") if source else [""]
+        border_v = visual_len("│")
+        content_w = max(width - 2 * border_v - 2, 1)
+        total_lines = sum(len(wrap_text(line, content_w)) for line in raw_lines)
+        block.height = total_lines + 2
 
     elif bt == BlockType.COLUMNS:
         block.height = max((c.height or 0 for c in block.children), default=0)

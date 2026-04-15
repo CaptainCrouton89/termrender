@@ -10,6 +10,7 @@ from pygments.lexers import TextLexer, get_lexer_by_name
 
 from termrender.blocks import Block
 from termrender.renderers.borders import render_box
+from termrender.style import visual_len, wrap_text
 
 
 def render(
@@ -19,18 +20,29 @@ def render(
     source = block.attrs.get("source", "")
     lang = block.attrs.get("lang")
 
+    # Wrap raw source lines to fit within the box before highlighting,
+    # so render_box doesn't need to grow beyond the layout allocation.
+    border_v = visual_len("│")
+    content_w = max((block.width or 1) - 2 * border_v - 2, 1)
+    raw_lines = source.split("\n") if source else [""]
+    wrapped_lines = []
+    for line in raw_lines:
+        wrapped_lines.extend(wrap_text(line, content_w))
+
+    wrapped_source = "\n".join(wrapped_lines)
+
     # Syntax highlight (or plain text)
-    if color and source:
+    if color and wrapped_source:
         try:
             lexer = get_lexer_by_name(lang) if lang else TextLexer()
         except Exception:
             lexer = TextLexer()
-        highlighted = highlight(source, lexer, TerminalFormatter())
+        highlighted = highlight(wrapped_source, lexer, TerminalFormatter())
         # Pygments adds a trailing newline — strip it
         highlighted = highlighted.rstrip("\n")
         code_lines = highlighted.split("\n")
     else:
-        code_lines = source.split("\n") if source else [""]
+        code_lines = wrapped_lines
 
     return render_box(
         code_lines,
