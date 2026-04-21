@@ -134,7 +134,10 @@ def _convert_inline(nodes: list[dict]) -> list[InlineSpan]:
         elif ntype == "softbreak":
             spans.append(InlineSpan(text=" "))
         elif ntype == "linebreak":
-            spans.append(InlineSpan(text="\n"))
+            # Two \n so wrap_text emits a blank line between the two sides
+            # of the hard break, giving more vertical breathing room than a
+            # soft wrap. See tests/test_linebreak.py.
+            spans.append(InlineSpan(text="\n\n"))
         else:
             # Fallback: try raw text
             if "raw" in node:

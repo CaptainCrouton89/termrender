@@ -7,12 +7,24 @@ from termrender.renderers import (
     panel, columns, tree, code, text, divider, quote, mermaid, table,
     diff, charts, stat, timeline,
 )
+from termrender.style import visual_ljust
 
 
 def emit_block(block: Block, color: bool) -> list[str]:
     """Render a single block and its children, returning output lines."""
     match block.type:
-        case BlockType.DOCUMENT | BlockType.COL:
+        case BlockType.DOCUMENT:
+            # Insert a blank padded line between top-level siblings so
+            # paragraphs, headings, and blocks don't visually run together.
+            lines: list[str] = []
+            sep = visual_ljust("", block.width or 0)
+            for i, child in enumerate(block.children):
+                if i > 0:
+                    lines.append(sep)
+                lines.extend(emit_block(child, color))
+            return lines
+
+        case BlockType.COL:
             lines: list[str] = []
             for child in block.children:
                 lines.extend(emit_block(child, color))
