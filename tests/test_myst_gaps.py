@@ -1,4 +1,4 @@
-"""Tests for MyST Markdown syntax support in the parser."""
+"""Tests for directive option lines and the colon-fence mermaid directive."""
 
 import unittest
 
@@ -6,56 +6,43 @@ from termrender.blocks import BlockType
 from termrender.parser import parse, _strip_options
 
 
-class TestBacktickFenceDirective(unittest.TestCase):
-    """Feature 1: Backtick fence directive syntax."""
+class TestMermaidDirective(unittest.TestCase):
+    """:::mermaid is the only fence form for mermaid diagrams."""
 
-    def test_basic_backtick_fence_directive(self):
-        """```{panel}\ncontent\n``` → BlockType.PANEL"""
-        doc = parse("```{panel}\ncontent\n```")
-        self.assertEqual(len(doc.children), 1)
-        self.assertEqual(doc.children[0].type, BlockType.PANEL)
-
-    def test_backtick_fence_with_option_lines(self):
-        """```{panel}\n:title: Hello\ncontent\n``` → panel with title attr"""
-        doc = parse("```{panel}\n:title: Hello\ncontent\n```")
-        panel = doc.children[0]
-        self.assertEqual(panel.type, BlockType.PANEL)
-        self.assertEqual(panel.attrs["title"], "Hello")
-
-    def test_backtick_mermaid_directive(self):
-        """```{mermaid}\ngraph LR\nA-->B\n``` → BlockType.MERMAID"""
-        doc = parse("```{mermaid}\ngraph LR\nA-->B\n```")
+    def test_basic_mermaid_directive(self):
+        """:::mermaid\ngraph LR\nA-->B\n::: → BlockType.MERMAID"""
+        doc = parse(":::mermaid\ngraph LR\nA-->B\n:::")
         self.assertEqual(len(doc.children), 1)
         block = doc.children[0]
         self.assertEqual(block.type, BlockType.MERMAID)
         self.assertIn("graph LR", block.attrs["source"])
 
-    def test_bare_mermaid_still_works(self):
-        """```mermaid\ngraph LR\n``` → BlockType.MERMAID (backward compat)"""
-        doc = parse("```mermaid\ngraph LR\nA-->B\n```")
-        self.assertEqual(doc.children[0].type, BlockType.MERMAID)
-
-    def test_empty_body_backtick_directive(self):
-        """```{panel}\n``` → panel with no children"""
-        doc = parse("```{panel}\n```")
-        panel = doc.children[0]
-        self.assertEqual(panel.type, BlockType.PANEL)
-
-    def test_backtick_fence_with_argument(self):
-        """```{code-block} python\nprint("hi")\n``` → attrs["argument"] = "python" """
-        doc = parse('```{code-block} python\nprint("hi")\n```')
+    def test_mermaid_with_option_lines(self):
+        """Option lines at the top of a mermaid body set attrs, not source."""
+        doc = parse(":::mermaid\n:title: Flow\ngraph LR\nA-->B\n:::")
         block = doc.children[0]
-        self.assertEqual(block.attrs.get("argument"), "python")
+        self.assertEqual(block.type, BlockType.MERMAID)
+        self.assertEqual(block.attrs.get("title"), "Flow")
+        self.assertIn("graph LR", block.attrs["source"])
+        self.assertNotIn(":title:", block.attrs["source"])
 
-    def test_four_backtick_fence(self):
-        """````{panel}\ncontent\n```` → works via mistune"""
-        doc = parse("````{panel}\ncontent\n````")
-        self.assertEqual(len(doc.children), 1)
-        self.assertEqual(doc.children[0].type, BlockType.PANEL)
+    def test_backtick_mermaid_is_plain_code_block(self):
+        """```mermaid is no longer a mermaid block — it renders as a code block."""
+        doc = parse("```mermaid\ngraph LR\nA-->B\n```")
+        block = doc.children[0]
+        self.assertEqual(block.type, BlockType.CODE)
+        self.assertEqual(block.attrs.get("lang"), "mermaid")
+
+    def test_backtick_directive_is_plain_code_block(self):
+        """```{panel} is no longer a directive — it renders as a code block."""
+        doc = parse("```{panel}\ncontent\n```")
+        block = doc.children[0]
+        self.assertEqual(block.type, BlockType.CODE)
+        self.assertEqual(block.attrs.get("lang"), "{panel}")
 
 
 class TestDirectiveOptionLines(unittest.TestCase):
-    """Feature 2: Directive option lines."""
+    """Directive option lines (`:key: value` at top of body)."""
 
     def test_colon_directive_with_options(self):
         """:::panel\n:title: Hi\n:color: blue\ncontent\n::: → attrs have title and color"""

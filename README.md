@@ -365,17 +365,17 @@ Horizontal rules with optional centered labels.
 
 ### Mermaid diagrams
 
-Renders mermaid flowcharts as ASCII art via [mermaid-ascii](https://github.com/mermaid-js/mermaid-ascii). Use standard mermaid fenced code blocks.
+Renders mermaid flowcharts as ASCII art via [mermaid-ascii](https://github.com/mermaid-js/mermaid-ascii). Mermaid uses the `:::mermaid` directive — backtick fences (`` ```mermaid ``) are treated as plain code blocks.
 
 **Input:**
-````markdown
-```mermaid
+```markdown
+:::mermaid
 graph LR
     A[Request] --> B{Auth?}
     B -->|Yes| C[Handler]
     B -->|No| D[401]
+:::
 ```
-````
 
 The diagram gets rendered as ASCII art inline in the terminal output. Requires `mermaid-ascii` to be installed (it's a dependency, so it should be).
 

@@ -85,24 +85,24 @@ c/
 # the column allocation. The inner panel's side walls and corner glyphs must
 # stay aligned even when content forces the panel to grow past its allotment.
 NESTED_PANEL_OVERFLOW_INPUT = """\
-::::::panel{title="Outer" color="cyan"}
-:::::columns
-::::col{width="58%"}
-:::panel{title="Request Flow" color="blue"}
-```mermaid
+:::::::panel{title="Outer" color="cyan"}
+::::::columns
+:::::col{width="58%"}
+::::panel{title="Request Flow" color="blue"}
+:::mermaid
 graph TD
     A[Edge gateway<br/>accepts request] --> B{Token valid?}
     B -->|yes| C[Route via LB<br/>to backend pool]
     B -->|no| D[Reject 401,<br/>write audit log]
     C --> E[Service responds,<br/>metrics emitted]
-```
 :::
 ::::
-::::col{width="42%"}
+:::::
+:::::col{width="42%"}
 right
-::::
 :::::
 ::::::
+:::::::
 """
 
 

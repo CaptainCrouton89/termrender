@@ -53,7 +53,8 @@ directives (close each with a matching colon count):
   :::tasklist                        Checkbox list — [x] checked, [ ] unchecked, [!] in-progress
       Plain lists with at least one marker auto-promote; use the directive
       to force unchecked styling on items without explicit markers.
-  ```mermaid ... ```                  Mermaid diagram (via mermaid-ascii)
+  :::mermaid                         Mermaid diagram (via mermaid-ascii)
+      body: standard mermaid source (graph TD, flowchart, sequenceDiagram, ...)
 
   Inline:
   :badge[text]{color=c}              Inline pill badge
@@ -335,18 +336,27 @@ def main() -> None:
             if args.width:
                 pane_width = args.width
             else:
-                # Default: 1/3 of window width (minus separator)
+                # Default sizing aims for a readable side pane (~80 cols) and
+                # only falls back to 1/3-of-window when the window is too narrow
+                # to give that much without crushing the source pane.
                 try:
                     result = subprocess.run(
                         ["tmux", "display-message", "-p", "#{window_width}"],
                         capture_output=True, text=True, check=True,
                     )
                     window_width = int(result.stdout.strip())
-                    pane_width = (window_width - 2) // 3
+                    # Prefer 80 cols if the source pane keeps at least 60.
+                    # Otherwise split evenly. Floor of 40 keeps text legible.
+                    if window_width >= 140:
+                        pane_width = 80
+                    elif window_width >= 100:
+                        pane_width = window_width // 2
+                    else:
+                        pane_width = max(window_width - 2 - 50, 40)
                 except Exception:
-                    pane_width = 60
+                    pane_width = 80
 
-            pane_width = max(pane_width, 20)  # absolute minimum
+            pane_width = max(pane_width, 40)  # absolute minimum for readability
 
         # Watch mode points the new pane at the user's real file so edits
         # propagate; non-watch mode snapshots source into a tempfile.

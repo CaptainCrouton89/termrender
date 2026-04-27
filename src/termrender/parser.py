@@ -69,15 +69,13 @@ _DIRECTIVE_TO_BLOCK: dict[str, BlockType] = {
     "gauge": BlockType.GAUGE,
     "stat": BlockType.STAT,
     "timeline": BlockType.TIMELINE,
+    "mermaid": BlockType.MERMAID,
     "tasklist": BlockType.LIST,  # alias: forces tasklist styling on the inner list
 }
 
 _SELF_CLOSING_DIRECTIVES = frozenset({"divider", "progress", "gauge"})
 
-# MyST backtick fence directive: ```{name} optional-argument
-_BACKTICK_DIRECTIVE_RE = re.compile(r"^\{(\w[\w-]*)\}(.*)")
-
-# MyST option line: :key: value — intentionally requires a value after the key
+# Option line: :key: value — intentionally requires a value after the key
 # (the \s+(.+) part). Flag-style options like :nosandbox: (no value) won't match
 # and will be treated as body content.
 _OPTION_LINE_RE = re.compile(r"^:(\w[\w-]*):\s+(.+)$")
@@ -248,7 +246,7 @@ def _expand_inline_roles(spans: list[InlineSpan]) -> list[InlineSpan]:
 
 
 def _strip_options(body: str) -> tuple[dict[str, str], str]:
-    """Strip MyST option lines from the start of a directive body.
+    """Strip option lines from the start of a directive body.
 
     Option lines have the form `:key: value` and appear at the start of the body.
     Blank lines between option lines are allowed. Scanning stops at the first
@@ -305,33 +303,10 @@ def _convert_ast(nodes: list[dict], _depth: int = 0) -> list[Block]:
         elif ntype == "block_code":
             raw = node.get("raw", "")
             info = node.get("attrs", {}).get("info", "")
-            # MyST backtick fence directive: ```{name} optional-arg
-            m_directive = _BACKTICK_DIRECTIVE_RE.match(info) if info else None
-            if m_directive:
-                dir_name = m_directive.group(1)
-                arg_text = m_directive.group(2).strip()
-                if dir_name == "mermaid":
-                    options, body = _strip_options(raw)
-                    attrs = dict(options)
-                    if arg_text:
-                        attrs["argument"] = arg_text
-                    attrs["source"] = body
-                    blocks.append(Block(type=BlockType.MERMAID, attrs=attrs))
-                else:
-                    attrs: dict[str, Any] = {}
-                    if arg_text:
-                        attrs["argument"] = arg_text
-                    blocks.append(_directive_to_block(dir_name, attrs, raw, _depth=_depth))
-            elif info == "mermaid":
-                blocks.append(Block(
-                    type=BlockType.MERMAID,
-                    attrs={"source": raw},
-                ))
-            else:
-                blocks.append(Block(
-                    type=BlockType.CODE,
-                    attrs={"lang": info, "source": raw},
-                ))
+            blocks.append(Block(
+                type=BlockType.CODE,
+                attrs={"lang": info, "source": raw},
+            ))
 
         elif ntype == "list":
             ordered = node.get("attrs", {}).get("ordered", False)
@@ -613,8 +588,8 @@ def _directive_to_block(name: str, attrs: dict[str, Any], body: str, _depth: int
 
     block_type = _DIRECTIVE_TO_BLOCK.get(name, BlockType.PANEL)
 
-    # Tree, Code, Diff: store raw body, don't parse as markdown
-    if block_type in (BlockType.TREE, BlockType.CODE, BlockType.DIFF):
+    # Tree, Code, Diff, Mermaid: store raw body, don't parse as markdown
+    if block_type in (BlockType.TREE, BlockType.CODE, BlockType.DIFF, BlockType.MERMAID):
         attrs["source"] = body
         return Block(type=block_type, attrs=attrs)
 
