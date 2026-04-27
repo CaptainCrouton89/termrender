@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v1.0.0 (2026-04-27)
+
+### Documentation
+
+- **claude-md**: Tighten root and src CLAUDE.md
+  ([`7fe01ec`](https://github.com/crouton-labs/termrender/commit/7fe01ec2da0c7a0c1aa0f4eccf9b958496562be8))
+
+### Features
+
+- **mermaid**: Switch to :::mermaid directive, drop backtick fence forms
+  ([`083f590`](https://github.com/crouton-labs/termrender/commit/083f5900b4b516f9df599dd08129afee34310e3d))
+
+BREAKING CHANGE: ```mermaid fenced code blocks are no longer rendered as mermaid diagrams — they now
+  render as plain code blocks. Mermaid diagrams must use the new :::mermaid directive. The
+  MyST-style ```{name} backtick directive form is also removed; backtick fences now always produce a
+  code block, regardless of the language tag. Every directive uses ::: exclusively.
+
+### Breaking Changes
+
+- **mermaid**: ```mermaid fenced code blocks are no longer rendered as mermaid diagrams — they now
+  render as plain code blocks. Mermaid diagrams must use the new :::mermaid directive. The
+  MyST-style ```{name} backtick directive form is also removed; backtick fences now always produce a
+  code block, regardless of the language tag. Every directive uses ::: exclusively.
+
+
 ## v0.9.1 (2026-04-25)
 
 ### Bug Fixes
