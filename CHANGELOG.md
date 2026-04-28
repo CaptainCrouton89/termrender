@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v1.0.1 (2026-04-28)
+
+### Bug Fixes
+
+- **parser**: Extract bullet text from paragraph children in loose lists
+  ([`95f389b`](https://github.com/crouton-labs/termrender/commit/95f389b808d89195a8b9dd957d7949328a8859e8))
+
+Mistune wraps list_item content in block_text for tight lists and in paragraph for loose lists. Only
+  block_text was being extracted into item spans, so loose-list bullets rendered with empty text —
+  the renderer's `if not block.text` short-circuit dropped the paragraph child entirely.
+
+
 ## v1.0.0 (2026-04-27)
 
 ### Documentation
