@@ -314,12 +314,19 @@ def _convert_ast(nodes: list[dict], _depth: int = 0) -> list[Block]:
             for item_node in node.get("children", []):
                 if item_node["type"] == "list_item":
                     item_children = item_node.get("children", [])
-                    # list_item contains block_text nodes
+                    # Tight lists wrap item content in block_text; loose lists
+                    # (blank line between items) wrap it in paragraph. Either way,
+                    # the first text-bearing child becomes the bullet's inline text.
                     item_spans: list[InlineSpan] = []
                     sub_blocks: list[Block] = []
+                    bullet_text_taken = False
                     for child in item_children:
-                        if child["type"] == "block_text":
+                        ctype = child["type"]
+                        if ctype == "block_text":
                             item_spans.extend(_convert_inline(child.get("children", [])))
+                        elif ctype == "paragraph" and not bullet_text_taken:
+                            item_spans.extend(_convert_inline(child.get("children", [])))
+                            bullet_text_taken = True
                         else:
                             sub_blocks.extend(_convert_ast([child], _depth=_depth))
                     items.append(Block(
