@@ -1,6 +1,38 @@
 # CHANGELOG
 
 
+## v2.1.0 (2026-05-16)
+
+### Documentation
+
+- **claude-md**: Document mermaid-ascii vendoring and correct stale --maxWidth
+  ([`643e25a`](https://github.com/crouton-labs/termrender/commit/643e25a791de1f32591b245dee064f290221cfc2))
+
+Note _mermaid_bin resolution, the pinned master binary, the no-width-flag reality, and the back-edge
+  panic in renderers/CLAUDE.md.
+
+- **claude-md**: Note QUOTE +1 height only applies to author/by attrs
+  ([`3184d43`](https://github.com/crouton-labs/termrender/commit/3184d43e7293af735b82d559bc3253d7542cbf85))
+
+### Features
+
+- **mermaid**: Vendor engine from upstream master, fix broken -w invocation
+  ([`d801de5`](https://github.com/crouton-labs/termrender/commit/d801de5bb22ba5205fe52ef65e80eda96590be93))
+
+mermaid-ascii has no -w/width flag and never has; layout.py and mermaid.py passed `-w <width>`, so
+  every diagram exited non-zero and degraded to raw source text on the 1.2.0 wheel. Drop -w (call is
+  now `-f - -y 1`).
+
+Resolve the binary via new _mermaid_bin.mermaid_ascii_bin(): prefer vendored
+  _bin/mermaid-ascii-<os>-<arch> (built from pinned upstream master 6fffb8e via
+  scripts/build-mermaid-ascii.sh), else fall back to `mermaid-ascii` on PATH (PyPI wheel, capped at
+  1.2.0). pyproject ships the binary via hatch artifacts and bumps the fallback dep to >=1.2.
+
+Caveats: only darwin-arm64 is vendored (other platforms fall back to the older PyPI engine); a
+  labeled back-edge in graph LR panics the binary on both 1.2.0 and master and degrades to source.
+  mermaid-ascii has no width control, so wide diagrams overflow (renderer pads, never truncates).
+
+
 ## v2.0.0 (2026-05-16)
 
 ### Continuous Integration
