@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import subprocess
 
+from termrender._mermaid_bin import mermaid_ascii_bin
 from termrender.blocks import Block
 from termrender.style import visual_ljust
 
@@ -81,7 +82,7 @@ def render(block: Block, color: bool) -> list[str]:
         source = block.attrs.get("source", "")
         try:
             result = subprocess.run(
-                ["mermaid-ascii", "-f", "-", "-w", str(block.width or 80), "-y", "1"],
+                [mermaid_ascii_bin(), "-f", "-", "-y", "1"],
                 input=preprocess_mermaid_for_ascii(source),
                 capture_output=True,
                 text=True,

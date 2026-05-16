@@ -31,7 +31,7 @@ def render_box(
     corner_v = visual_len("┌")  # same as ┐, └, ┘
 
     # Grow the box if any content line (or the title) won't fit at the
-    # requested width. mermaid-ascii's --maxWidth is non-strict, so a child
+    # requested width. mermaid-ascii has no width-control flag, so a child
     # mermaid block can return lines wider than its allocated content area.
     # Truncating would corrupt the diagram; growing keeps the box's top,
     # bottom, and side borders aligned at the same column even if it
