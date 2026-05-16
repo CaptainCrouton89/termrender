@@ -1,6 +1,44 @@
 # CHANGELOG
 
 
+## v2.0.0 (2026-05-16)
+
+### Continuous Integration
+
+- **publish**: Authenticate PyPI upload with API token
+  ([`09e21c8`](https://github.com/crouton-labs/termrender/commit/09e21c8f58529f8c9ba9a383c24563e6ebaba2f3))
+
+Trusted publishing has failed on every release since v0.8.0 (invalid-publisher: OIDC claims for
+  crouton-labs/termrender had no matching PyPI publisher), so 0.9.0-1.0.1 were tagged but never
+  reached PyPI. Switch the publish job to token auth via the pypi-environment secret PYPI_API_TOKEN
+  and drop the now-unused id-token permission.
+
+### Features
+
+- **cli**: Redesign CLI to agent-oriented JSON-stdin contract
+  ([`ef70751`](https://github.com/crouton-labs/termrender/commit/ef7075103bc49d13cbd6bebdd01841454e5950ff))
+
+Restructure the CLI as a noun-verb tree consumed by programs/agents: `termrender doc
+  {render,check,watch}` and `termrender pane {open,update}`. All parameters arrive as a single JSON
+  object on stdin; no flags except -h. Errors are structured JSON {error,message,next} on stdout
+  with stable codes and non-zero exit. `doc check` emits {ok,errors[]} JSON on stdout (was "ok" on
+  stderr). Per-node -h is a spec (input/output schema + Effects), not examples. The library render()
+  API is unchanged; rendered ANSI output for doc render/doc watch is intentionally preserved as the
+  product.
+
+BREAKING CHANGE: the flag/positional CLI surface is removed. `termrender FILE`, -w/--width,
+  --no-color, --check, --cjk, --tmux, --pane, --tmux-new-window, --watch, and -V/--version no longer
+  exist. Callers must invoke a subcommand and pass parameters as a JSON object on stdin. Version is
+  shown in root -h.
+
+### Breaking Changes
+
+- **cli**: The flag/positional CLI surface is removed. `termrender FILE`, -w/--width, --no-color,
+  --check, --cjk, --tmux, --pane, --tmux-new-window, --watch, and -V/--version no longer exist.
+  Callers must invoke a subcommand and pass parameters as a JSON object on stdin. Version is shown
+  in root -h.
+
+
 ## v1.0.1 (2026-04-28)
 
 ### Bug Fixes
