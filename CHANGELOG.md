@@ -3,23 +3,29 @@
 
 ## v3.0.0 (2026-05-18)
 
-### Breaking Changes
+### Chores
 
-- **cli**: Replace JSON-on-stdin input contract with flags + positional args + stdin-as-content.
+- Re-trigger release publish for v3.0.0
+  ([`467c583`](https://github.com/crouton-labs/termrender/commit/467c58338de217a417530e0bc32ad0a6973012eb))
 
-All parameters now arrive as long-form flags (`--width`, `--color`, `--cjk`, `--watch`, etc.).
-`doc render` and `doc check` read raw markdown source from stdin (not a JSON object).
-`doc watch`, `pane open`, and `pane update` take the file path as a positional argument.
-The old `{"source": "..."}` JSON-on-stdin form is removed — sending JSON is now treated as
-literal markdown input and will render/check the JSON text itself.
+### Documentation
 
-- `--color` is now an enum `auto|on|off` (was `bool|null`). Mapping: `true` → `on`, `false` → `off`, `null`/absent → `auto`.
-- `--watch` now defaults to **false** (was `true`). Pass `--watch` to enable live-update in pane commands.
-- `--pane-id` is now a required flag on `pane update` (was a JSON field).
-- New stable error code `bad_invocation` emitted as JSON on stdout (exit 1) for invalid flag/positional combinations.
+- **claude-md**: Update CLI invocations to v3 flag form, prune stale notes
+  ([`1276bf8`](https://github.com/crouton-labs/termrender/commit/1276bf86261528a725f8a012e2105b359f085eca))
 
-Pane self-pipe commands now use `cat file | termrender doc render ...` (for non-watch) and
-`termrender doc watch ... -- /path` (for watch mode).
+### Features
+
+- **cli**: Switch input contract to flags + positional + stdin
+  ([`38df421`](https://github.com/crouton-labs/termrender/commit/38df4218af8c26d469a442b87090ad268ae47b0e))
+
+Drops JSON-on-stdin in favor of long-form flags, at most one positional, stdin for the markdown
+  content blob, per cli-design v2. Output (ANSI for render, JSON elsewhere), errors, and exit codes
+  are unchanged.
+
+- doc render / doc check now read source from stdin - doc watch / pane open / pane update take path
+  as positional - pane update gains --pane-id flag - --color is an enum (auto|on|off) replacing the
+  prior bool|null - --watch is presence-only and defaults to false on pane open/update - Internal
+  pane self-pipe rebuilds the new flag-form invocations
 
 
 ## v2.1.0 (2026-05-16)
