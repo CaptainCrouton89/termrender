@@ -4,18 +4,16 @@
 ```bash
 pip install -e .
 pytest tests/
-python -m termrender <file.md>
+cat file.md | termrender doc render          # render markdown
+cat file.md | termrender doc check           # validate syntax
+termrender doc watch /path/to/file.md        # live-render
 python -m build
 ```
 
-No linter or formatter is configured.
-
 ## Constraints
 - **Layout pass order is load-bearing**: `resolve_width()` top-down must complete before `resolve_height()` bottom-up — height calls `wrap_text(text, width)`, which requires width already set.
-- **`borders.py` `render_box` width**: takes **total** width including borders, not content width. Passing content width silently overflows.
 - **`wrap_text()` CJK bug**: uses `len()` internally, not `visual_len()` — silently overflows for CJK content.
 - **`_ambiguous_width` is global mutable state** with no reset path — `set_ambiguous_width()` or `TERMRENDER_CJK` env var changes persist for the process lifetime.
-- **Version**: derived from git tags via hatch-vcs — no version in `pyproject.toml`. Adding one will conflict.
 - **Commits**: conventional commits. `feat` → minor, `fix`/`perf` → patch. Auto-released via python-semantic-release on main.
 
 ## Supplementary CLAUDE.md files
