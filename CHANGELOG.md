@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v3.0.0 (2026-05-18)
+
+### Breaking Changes
+
+- **cli**: Replace JSON-on-stdin input contract with flags + positional args + stdin-as-content.
+
+All parameters now arrive as long-form flags (`--width`, `--color`, `--cjk`, `--watch`, etc.).
+`doc render` and `doc check` read raw markdown source from stdin (not a JSON object).
+`doc watch`, `pane open`, and `pane update` take the file path as a positional argument.
+The old `{"source": "..."}` JSON-on-stdin form is removed — sending JSON is now treated as
+literal markdown input and will render/check the JSON text itself.
+
+- `--color` is now an enum `auto|on|off` (was `bool|null`). Mapping: `true` → `on`, `false` → `off`, `null`/absent → `auto`.
+- `--watch` now defaults to **false** (was `true`). Pass `--watch` to enable live-update in pane commands.
+- `--pane-id` is now a required flag on `pane update` (was a JSON field).
+- New stable error code `bad_invocation` emitted as JSON on stdout (exit 1) for invalid flag/positional combinations.
+
+Pane self-pipe commands now use `cat file | termrender doc render ...` (for non-watch) and
+`termrender doc watch ... -- /path` (for watch mode).
+
+
 ## v2.1.0 (2026-05-16)
 
 ### Documentation

@@ -12,7 +12,7 @@ _MISSING = object()
 
 # Exit codes
 EXIT_OK = 0
-EXIT_INPUT = 1    # bad stdin JSON, missing required field, not-in-tmux, tmux-missing, pane-gone
+EXIT_INPUT = 1    # bad invocation, missing required, not-in-tmux, tmux-missing, pane-gone
 EXIT_SYNTAX = 2   # directive syntax / nesting error, pre-check failure
 EXIT_TERMINAL = 3 # terminal capability error
 
@@ -21,6 +21,142 @@ try:
     __version__ = _pkg_version("termrender")
 except Exception:
     __version__ = "dev"
+
+
+# ---------------------------------------------------------------------------
+# Help text
+# ---------------------------------------------------------------------------
+
+_ROOT_HELP = f"""\
+termrender {__version__}
+
+Render directive-flavored markdown as rich ANSI terminal output.
+
+Concepts
+  doc     a markdown document rendered to ANSI
+  pane    a tmux side-pane displaying a rendered document
+
+Subtrees
+  doc     render, check, or watch a markdown document  | use when working with document content
+  pane    manage a tmux side-pane renderer              | use when managing a persistent display pane
+
+Globals
+  -h      print -h for any node or leaf
+
+I/O contract: flags and positional args on input, ANSI on stdout for doc render,
+JSON on stdout for all other leaves. Errors are JSON on stdout, exit non-zero.
+Exit 0 on success, 1 input error, 2 syntax/nesting error, 3 terminal capability error.
+
+Stable error codes: bad_invocation bad_input syntax_error nesting_error
+                    terminal_error not_in_tmux tmux_missing pane_gone internal
+"""
+
+_DOC_HELP = """\
+termrender doc — document rendering commands.
+A document is a markdown source string rendered to ANSI terminal output.
+
+Branches
+  render  render markdown to ANSI and print to stdout   | use when producing output for display
+  check   validate directive syntax without rendering    | use when validating before rendering
+  watch   live-render a file, updating on every save     | use when monitoring a file interactively
+"""
+
+_DOC_RENDER_HELP = """\
+termrender doc render: render a markdown document to ANSI and write to stdout.
+
+Input
+  stdin              required. Markdown source to render. Pipe via: cat file.md | termrender doc render
+  --width N          optional int. Output width in columns. Omit for auto-detect from terminal.
+  --color auto|on|off  optional. Force color on/off, or auto-detect (default auto).
+  --cjk              optional boolean. When present, treat ambiguous-width Unicode as double-width.
+
+Output (stdout, ANSI)
+  The rendered ANSI string. This leaf outputs ANSI, not JSON, on success.
+
+Effects
+  None. Read-only.
+"""
+
+_DOC_CHECK_HELP = """\
+termrender doc check: validate directive syntax without rendering.
+
+Input
+  stdin   required. Markdown source to validate. Pipe via: cat file.md | termrender doc check
+  --cjk   optional boolean. When present, treat ambiguous-width Unicode as double-width.
+
+Output (stdout, JSON)
+  ok      bool. True when source is valid.
+  errors  object[]. Each: {kind: "syntax"|"nesting", message: string}. Empty when ok is true.
+
+Effects
+  None. Read-only. Exit 0 when ok, 2 when not ok.
+"""
+
+_DOC_WATCH_HELP = """\
+termrender doc watch: live-render a file in the controlling terminal, updating on every save.
+
+WARNING: takes over the controlling terminal until quit (q or Ctrl-C).
+Intended for human interactive use or as the process inside a tmux pane.
+
+Input
+  PATH               positional, required. File path to watch and re-render on change.
+  --color auto|on|off  optional. Force color on/off, or auto-detect (default auto).
+  --cjk              optional boolean. When present, treat ambiguous-width Unicode as double-width.
+
+Output (stdout, ANSI)
+  Renders directly to the controlling terminal. No JSON output.
+
+Effects
+  Takes over the controlling terminal until quit. Exit 0 on quit.
+"""
+
+_PANE_HELP = """\
+termrender pane — tmux pane management commands.
+A pane is a persistent tmux split showing a live-rendered document.
+
+Branches
+  open    spawn a new tmux pane rendering a file    | use when starting a new side-pane display
+  update  respawn an existing pane with new content  | use when pointing an existing pane at new content
+"""
+
+_PANE_OPEN_HELP = """\
+termrender pane open: spawn a tmux pane rendering a file. Returns immediately.
+Requires: running inside an active tmux session.
+
+Input
+  PATH               positional, required. File to render in the pane.
+  --width N          optional int. Pane width in columns. Omit for auto-size from window.
+  --color auto|on|off  optional. Force color on/off, or auto-detect (default auto).
+  --cjk              optional boolean. When present, treat ambiguous-width Unicode as double-width.
+  --watch            optional boolean. When present, live-update the pane on file save (default false).
+  --window split|new   optional. Split current pane or open a new tmux window (default split).
+
+Output (stdout, JSON)
+  pane_id   string. Tmux pane id. Use with termrender pane update.
+
+Effects
+  Spawns a detached tmux pane (split or new window) running the renderer.
+  The pane lives until closed by the user or the process terminates.
+"""
+
+_PANE_UPDATE_HELP = """\
+termrender pane update: respawn an existing tmux pane with new content. Pane id is unchanged.
+Requires: running inside an active tmux session.
+
+Input
+  PATH               positional, required. New file to render in the pane.
+  --pane-id ID       required. Tmux pane id to update (e.g. "%23").
+  --width N          optional int. Override pane width in columns. Omit to read from pane.
+  --color auto|on|off  optional. Force color on/off, or auto-detect (default auto).
+  --cjk              optional boolean. When present, treat ambiguous-width Unicode as double-width.
+  --watch            optional boolean. When present, live-update the pane on file save (default false).
+
+Output (stdout, JSON)
+  pane_id   string. Same pane id as --pane-id input.
+
+Effects
+  Replaces the process in the target pane.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -47,83 +183,13 @@ def _json_error(
     sys.exit(code)
 
 
-def _read_stdin_json() -> dict[str, Any]:
-    raw = sys.stdin.read()
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as e:
-        _json_error(
-            "bad_stdin_json",
-            f"stdin is not valid JSON: {e}",
-            received=raw[:200] if len(raw) > 200 else raw,
-            next_="send a single JSON object on stdin",
-        )
-    if not isinstance(parsed, dict):
-        _json_error(
-            "bad_stdin_json",
-            "stdin JSON must be an object, not a " + type(parsed).__name__,
-            received=parsed,
-            next_="send a single JSON object on stdin, e.g. {\"source\": \"...\"}",
-        )
-    return parsed
-
-
-def _require(params: dict[str, Any], field: str, typ: type, label: str) -> Any:
-    if field not in params:
-        _json_error(
-            "bad_input",
-            f"required field '{field}' is missing",
-            field=field,
-            next_=f"add \"{field}\": <{label}> to your stdin JSON object",
-        )
-    val = params[field]
-    if not isinstance(val, typ):
-        _json_error(
-            "bad_input",
-            f"field '{field}' must be {label}, got {type(val).__name__}",
-            received=val,
-            field=field,
-            next_=f"set \"{field}\" to a {label} value",
-        )
-    return val
-
-
-def _opt(params: dict[str, Any], field: str, typ: type | tuple, default: Any = None) -> Any:
-    if field not in params:
-        return default
-    val = params[field]
-    if not isinstance(val, typ):
-        _json_error(
-            "bad_input",
-            f"field '{field}' has wrong type: expected {typ}, got {type(val).__name__}",
-            received=val,
-            field=field,
-            next_=f"fix the type of '{field}' in your stdin JSON object",
-        )
-    return val
-
-
-def _opt_nullable(params: dict[str, Any], field: str, typ: type, default: Any = None) -> Any:
-    """Accept field as typ | null | absent; absent → default."""
-    if field not in params:
-        return default
-    val = params[field]
-    if val is None:
-        return None
-    if not isinstance(val, typ):
-        _json_error(
-            "bad_input",
-            f"field '{field}' must be {typ.__name__} or null, got {type(val).__name__}",
-            received=val,
-            field=field,
-            next_=f"set '{field}' to a {typ.__name__} or null",
-        )
-    return val
-
-
-def _resolve_color(color_param: bool | None, *, force_env: bool = False) -> bool:
-    if color_param is not None:
-        return color_param
+def _resolve_color(color_flag: str) -> bool:
+    """Convert --color enum value to bool. 'auto' → TTY/env detection."""
+    if color_flag == "on":
+        return True
+    if color_flag == "off":
+        return False
+    # 'auto'
     if os.environ.get("TERMRENDER_COLOR") == "1":
         return True
     if os.environ.get("NO_COLOR"):
@@ -131,20 +197,61 @@ def _resolve_color(color_param: bool | None, *, force_env: bool = False) -> bool
     return sys.stdout.isatty()
 
 
+def _read_stdin_source(leaf_path: str) -> str:
+    """Read source markdown from stdin. Error if stdin is a TTY (no piped content)."""
+    if sys.stdin.isatty():
+        _json_error(
+            "bad_invocation",
+            f"termrender {leaf_path} requires markdown source on stdin but stdin is a terminal",
+            received="(tty)",
+            next_=f"pipe markdown source: cat file.md | termrender {leaf_path}",
+        )
+    return sys.stdin.read()
+
+
+# ---------------------------------------------------------------------------
+# Argparse subclass — emits bad_invocation JSON instead of printing to stderr
+# ---------------------------------------------------------------------------
+
+class _StrictParser(argparse.ArgumentParser):
+    """ArgumentParser that emits structured bad_invocation JSON on error."""
+
+    def error(self, message: str) -> NoReturn:  # type: ignore[override]
+        argv_tail = sys.argv[1:]
+        _json_error(
+            "bad_invocation",
+            f"argument error: {message}",
+            received=" ".join(argv_tail),
+            next_="run with -h for the input schema",
+        )
+
+    def exit(self, status: int = 0, message: str | None = None) -> NoReturn:  # type: ignore[override]
+        if status != 0 and message:
+            _json_error(
+                "bad_invocation",
+                message.strip(),
+                received=" ".join(sys.argv[1:]),
+                next_="run with -h for the input schema",
+            )
+        sys.exit(status)
+
+
+def _make_leaf_parser(prog: str) -> _StrictParser:
+    return _StrictParser(prog=prog, add_help=False)
+
+
 # ---------------------------------------------------------------------------
 # Command implementations
 # ---------------------------------------------------------------------------
 
-def _cmd_doc_render(params: dict[str, Any]) -> None:
-    source = _require(params, "source", str, "string")
-    width = _opt_nullable(params, "width", int, default=None)
-    color_param = _opt_nullable(params, "color", bool, default=None)
-    cjk = _opt(params, "cjk", bool, False)
+def _cmd_doc_render(args: argparse.Namespace) -> None:
+    source = _read_stdin_source("doc render")
+    width: int | None = args.width
+    color = _resolve_color(args.color)
+    cjk: bool = args.cjk
 
     if cjk:
         os.environ["TERMRENDER_CJK"] = "1"
-
-    color = _resolve_color(color_param)
 
     try:
         output = render(source, width=width, color=color)
@@ -152,14 +259,14 @@ def _cmd_doc_render(params: dict[str, Any]) -> None:
         _json_error(
             "terminal_error",
             f"terminal does not support required capabilities: {e}",
-            next_="use a terminal that supports Unicode, or set color=false in your request",
+            next_="use a terminal that supports Unicode, or pass --color off",
             code=EXIT_TERMINAL,
         )
     except DirectiveError as e:
         _json_error(
             "syntax_error",
             f"directive syntax error: {e}",
-            next_="fix the malformed/unclosed directive in 'source', or call termrender doc check first",
+            next_="fix the malformed/unclosed directive in source, or call termrender doc check first",
             code=EXIT_SYNTAX,
         )
     except ValueError as e:
@@ -173,7 +280,7 @@ def _cmd_doc_render(params: dict[str, Any]) -> None:
         _json_error(
             "internal",
             f"unexpected render error: {e}",
-            next_="report this as a bug with the 'source' value that triggered it",
+            next_="report this as a bug with the source that triggered it",
             code=EXIT_INPUT,
         )
 
@@ -181,9 +288,9 @@ def _cmd_doc_render(params: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def _cmd_doc_check(params: dict[str, Any]) -> None:
-    source = _require(params, "source", str, "string")
-    cjk = _opt(params, "cjk", bool, False)
+def _cmd_doc_check(args: argparse.Namespace) -> None:
+    source = _read_stdin_source("doc check")
+    cjk: bool = args.cjk
 
     if cjk:
         os.environ["TERMRENDER_CJK"] = "1"
@@ -206,39 +313,56 @@ def _cmd_doc_check(params: dict[str, Any]) -> None:
     sys.exit(EXIT_OK if ok else EXIT_SYNTAX)
 
 
-def _cmd_doc_watch(params: dict[str, Any]) -> None:
-    path = _require(params, "path", str, "string")
-    color_param = _opt_nullable(params, "color", bool, default=None)
-    cjk = _opt(params, "cjk", bool, False)
+def _cmd_doc_watch(args: argparse.Namespace) -> None:
+    path: str = args.path
+    color = _resolve_color(args.color)
+    cjk: bool = args.cjk
 
     if cjk:
         os.environ["TERMRENDER_CJK"] = "1"
 
-    color = _resolve_color(color_param)
     _watch_loop(path, color=color)
     sys.exit(EXIT_OK)
 
 
-def _cmd_pane_open(params: dict[str, Any]) -> None:
+def _build_pane_cmd(
+    *,
+    watch: bool,
+    path: str,
+    cjk: bool,
+    pane_width: int | None,
+    tmpfile: str | None,
+) -> str:
+    """Build the tmux pane command string using the new flag-form CLI."""
     import shlex
+
+    cjk_flag = " --cjk" if cjk else ""
+
+    if watch:
+        # doc watch reads path as positional; use -- to guard against flag-looking paths
+        cmd = f"termrender doc watch --color on{cjk_flag} -- {shlex.quote(path)}"
+    else:
+        effective_path = tmpfile if tmpfile else path
+        width_flag = f" --width {pane_width}" if pane_width is not None else ""
+        # doc render reads stdin — cat the file into it
+        cmd = (
+            f"cat {shlex.quote(effective_path)}"
+            f" | termrender doc render --color on{width_flag}{cjk_flag}"
+            f" | less -R; rm -f {shlex.quote(effective_path)}"
+        )
+    return cmd
+
+
+def _cmd_pane_open(args: argparse.Namespace) -> None:
     import subprocess
     import tempfile
 
-    path = _require(params, "path", str, "string")
-    width = _opt_nullable(params, "width", int, default=None)
-    color_param = _opt_nullable(params, "color", bool, default=None)
-    cjk = _opt(params, "cjk", bool, False)
-    watch = _opt(params, "watch", bool, True)
-    window = _opt(params, "window", str, "split")
-
-    if window not in ("split", "new"):
-        _json_error(
-            "bad_input",
-            f"field 'window' must be \"split\" or \"new\", got {window!r}",
-            received=window,
-            field="window",
-            next_='set "window" to "split" or "new"',
-        )
+    path: str = args.path
+    width: int | None = args.width
+    color = _resolve_color(args.color)
+    cjk: bool = args.cjk
+    watch: bool = args.watch
+    window: str = args.window
 
     if not os.environ.get("TMUX"):
         _json_error(
@@ -248,7 +372,6 @@ def _cmd_pane_open(params: dict[str, Any]) -> None:
             code=EXIT_INPUT,
         )
 
-    # Read source for pre-check only when not watch mode (watch points at live file)
     try:
         with open(path) as f:
             source = f.read()
@@ -302,7 +425,6 @@ def _cmd_pane_open(params: dict[str, Any]) -> None:
         pane_width = max(pane_width, 40)
 
     if watch:
-        source_path = path
         tmpfile = None
     else:
         with tempfile.NamedTemporaryFile(
@@ -310,24 +432,14 @@ def _cmd_pane_open(params: dict[str, Any]) -> None:
         ) as f:
             f.write(source)
             tmpfile = f.name
-        source_path = tmpfile
 
-    cmd_parts = ["termrender", "doc"]
-    if watch:
-        cmd_parts += ["watch"]
-        stdin_json = json.dumps({"path": source_path, "color": True, "cjk": cjk})
-        pane_cmd = f"echo {shlex.quote(stdin_json)} | termrender doc watch"
-    else:
-        stdin_json = json.dumps({
-            "source": source,
-            "color": True,
-            "cjk": cjk,
-            **({"width": pane_width} if pane_width is not None else {}),
-        })
-        pane_cmd = (
-            f"echo {shlex.quote(stdin_json)} | termrender doc render"
-            + f" | less -R; rm -f {shlex.quote(source_path)}"
-        )
+    pane_cmd = _build_pane_cmd(
+        watch=watch,
+        path=path,
+        cjk=cjk,
+        pane_width=pane_width,
+        tmpfile=tmpfile,
+    )
 
     try:
         if window == "new":
@@ -372,17 +484,16 @@ def _cmd_pane_open(params: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def _cmd_pane_update(params: dict[str, Any]) -> None:
-    import shlex
+def _cmd_pane_update(args: argparse.Namespace) -> None:
     import subprocess
     import tempfile
 
-    pane_id = _require(params, "pane_id", str, "string")
-    path = _require(params, "path", str, "string")
-    width = _opt_nullable(params, "width", int, default=None)
-    color_param = _opt_nullable(params, "color", bool, default=None)
-    cjk = _opt(params, "cjk", bool, False)
-    watch = _opt(params, "watch", bool, True)
+    pane_id: str = args.pane_id
+    path: str = args.path
+    width: int | None = args.width
+    color = _resolve_color(args.color)
+    cjk: bool = args.cjk
+    watch: bool = args.watch
 
     try:
         with open(path) as f:
@@ -436,7 +547,6 @@ def _cmd_pane_update(params: dict[str, Any]) -> None:
         pane_width = max(pane_width, 20)
 
     if watch:
-        source_path = path
         tmpfile = None
     else:
         with tempfile.NamedTemporaryFile(
@@ -444,22 +554,14 @@ def _cmd_pane_update(params: dict[str, Any]) -> None:
         ) as f:
             f.write(source)
             tmpfile = f.name
-        source_path = tmpfile
 
-    if watch:
-        stdin_json = json.dumps({"path": source_path, "color": True, "cjk": cjk})
-        pane_cmd = f"echo {shlex.quote(stdin_json)} | termrender doc watch"
-    else:
-        stdin_json = json.dumps({
-            "source": source,
-            "color": True,
-            "cjk": cjk,
-            "width": pane_width,
-        })
-        pane_cmd = (
-            f"echo {shlex.quote(stdin_json)} | termrender doc render"
-            + f" | less -R; rm -f {shlex.quote(source_path)}"
-        )
+    pane_cmd = _build_pane_cmd(
+        watch=watch,
+        path=path,
+        cjk=cjk,
+        pane_width=pane_width,
+        tmpfile=tmpfile,
+    )
 
     try:
         subprocess.run(
@@ -498,7 +600,7 @@ def _cmd_pane_update(params: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Watch loop (unchanged from original)
+# Watch loop (unchanged)
 # ---------------------------------------------------------------------------
 
 def _watch_loop(file_path: str, *, color: bool, poll_interval: float = 0.2) -> None:
@@ -697,289 +799,141 @@ def _watch_loop(file_path: str, *, color: bool, poll_interval: float = 0.2) -> N
 
 
 # ---------------------------------------------------------------------------
-# Help text
+# Leaf parser factories
 # ---------------------------------------------------------------------------
 
-_ROOT_HELP = f"""\
-termrender {__version__}
-
-Render directive-flavored markdown as rich ANSI terminal output.
-
-I/O CONTRACT (applies to all leaf commands):
-  Input:  a single JSON object on stdin
-  Output: see per-leaf below (ANSI or JSON)
-  Errors: a JSON object on stdout, exit non-zero
-    {{
-      "error":    "<stable_code>",
-      "message":  "<human readable>",
-      "received": <offending value>,   // when applicable
-      "field":    "<field name>",       // when applicable
-      "next":     "<recovery action>"
-    }}
-
-  Stable error codes:
-    bad_stdin_json   stdin is not valid JSON or not an object
-    bad_input        missing/wrong-type/invalid field value
-    syntax_error     directive syntax error in source
-    nesting_error    directive nesting error in source
-    terminal_error   terminal does not support required capabilities
-    not_in_tmux      pane command run outside tmux
-    tmux_missing     tmux binary not found
-    pane_gone        target pane no longer exists
-    internal         unexpected error (report as bug)
-
-Exit codes:
-  0  ok
-  1  input / usage error
-  2  syntax / nesting error
-  3  terminal capability error
-
-Branches:
-  doc   | use when: rendering, checking, or watching a markdown document
-  pane  | use when: managing a tmux side-pane renderer
-
-Use -h on any branch or leaf for its input/output schema.
-"""
-
-_DOC_HELP = """\
-termrender doc — document rendering commands
-
-Leaves:
-  render  | render markdown to ANSI and print to stdout
-  check   | validate directive syntax without rendering
-  watch   | live-render a file in the controlling terminal (human use)
-
-Use -h on a leaf for its input/output schema.
-"""
-
-_DOC_RENDER_HELP = """\
-termrender doc render
-
-Render a markdown document to ANSI and write to stdout.
-
-Input (JSON object on stdin):
-  source  string   required   Markdown source to render
-  width   int|null optional   Output width in columns; null = auto-detect terminal width
-  color   bool|null optional  Force color on/off; null = true when stdout isatty or TERMRENDER_COLOR=1
-  cjk     bool     optional   Treat ambiguous-width Unicode as double-width (default false)
-
-Output:
-  The rendered ANSI string written directly to stdout (NOT JSON).
-  This is the only leaf that outputs non-JSON on success.
-
-Errors:
-  syntax_error    exit 2 — malformed/unclosed directive in source
-  nesting_error   exit 2 — outer fence does not use strictly more colons than inner
-  terminal_error  exit 3 — terminal does not support required capabilities
-
-Effects: none.
-"""
-
-_DOC_CHECK_HELP = """\
-termrender doc check
-
-Validate directive syntax without rendering.
-
-Input (JSON object on stdin):
-  source  string  required   Markdown source to validate
-  cjk     bool    optional   Treat ambiguous-width Unicode as double-width (default false)
-
-Output (JSON):
-  { "ok": bool, "errors": [ {"kind": "syntax"|"nesting", "message": string} ] }
-  errors is [] when ok is true.
-
-Exit: 0 when ok, 2 when not ok.
-Effects: none.
-"""
-
-_DOC_WATCH_HELP = """\
-termrender doc watch
-
-Live-render a file in the controlling terminal, updating on every save.
-
-WARNING: this command takes over the controlling terminal until quit (q or Ctrl-C).
-It is intended for human interactive use, NOT for agent capture or subprocess piping.
-
-Input (JSON object on stdin):
-  path   string    required   File path to watch and re-render on change
-  color  bool|null optional   Force color on/off; null = auto-detect
-  cjk    bool      optional   Treat ambiguous-width Unicode as double-width (default false)
-
-Output: none (renders directly to the controlling terminal).
-Exit: 0 on quit. Effects: takes over the controlling terminal until quit.
-"""
-
-_PANE_HELP = """\
-termrender pane — tmux pane management commands
-
-Leaves:
-  open    | spawn a new tmux pane rendering a file
-  update  | respawn an existing pane with new content
-
-Use -h on a leaf for its input/output schema.
-"""
-
-_PANE_OPEN_HELP = """\
-termrender pane open
-
-Spawn a tmux pane rendering a file. Returns immediately.
-Requires: running inside an active tmux session.
-
-Input (JSON object on stdin):
-  path    string         required   File to render in the pane
-  width   int|null       optional   Pane width in columns; null = auto-size from window
-  color   bool|null      optional   Force color; null = always true in pane
-  cjk     bool           optional   Double-width ambiguous Unicode (default false)
-  watch   bool           optional   Live-update on file save (default true)
-  window  "split"|"new"  optional   Split current pane or open a new tmux window (default "split")
-
-Output (JSON):
-  { "pane_id": string }
-
-Errors:
-  not_in_tmux  exit 1 — not inside a tmux session
-  tmux_missing exit 1 — tmux binary not found
-  syntax_error exit 2 — file has directive syntax errors (pre-check)
-  nesting_error exit 2 — file has nesting errors (pre-check)
-  bad_input    exit 1 — file unreadable or field invalid
-
-Effects: spawns a detached tmux pane (split or new window) running the renderer.
-The pane lives until closed by the user.
-"""
-
-_PANE_UPDATE_HELP = """\
-termrender pane update
-
-Respawn an existing tmux pane with new content. Pane id is unchanged.
-Requires: running inside an active tmux session.
-
-Input (JSON object on stdin):
-  pane_id  string    required   Tmux pane id to update (e.g. "%23")
-  path     string    required   New file to render in the pane
-  width    int|null  optional   Override pane width; null = read from pane
-  color    bool|null optional   Force color; null = always true in pane
-  cjk      bool      optional   Double-width ambiguous Unicode (default false)
-  watch    bool      optional   Live-update on file save (default true)
-
-Output (JSON):
-  { "pane_id": string }   (same pane_id as input)
-
-Errors:
-  pane_gone    exit 1 — target pane no longer exists
-  tmux_missing exit 1 — tmux binary not found
-  syntax_error exit 2 — file has directive syntax errors (pre-check)
-  nesting_error exit 2 — file has nesting errors (pre-check)
-
-Effects: replaces the process in the target pane.
-"""
+def _parser_doc_render() -> _StrictParser:
+    p = _make_leaf_parser("termrender doc render")
+    p.add_argument("--width", type=int, default=None, metavar="N")
+    p.add_argument("--color", choices=["auto", "on", "off"], default="auto")
+    p.add_argument("--cjk", action="store_true", default=False)
+    return p
 
 
-# ---------------------------------------------------------------------------
-# Parser construction (help-only, no flags)
-# ---------------------------------------------------------------------------
-
-class _HelpAction(argparse.Action):
-    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help=None):
-        super().__init__(option_strings=option_strings, dest=dest, default=default, nargs=0, help=help)
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        parser.print_help()
-        parser.exit(0)
+def _parser_doc_check() -> _StrictParser:
+    p = _make_leaf_parser("termrender doc check")
+    p.add_argument("--cjk", action="store_true", default=False)
+    return p
 
 
-def _make_parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(
-        prog="termrender",
-        add_help=False,
+def _parser_doc_watch() -> _StrictParser:
+    p = _make_leaf_parser("termrender doc watch")
+    p.add_argument("path", metavar="PATH")
+    p.add_argument("--color", choices=["auto", "on", "off"], default="auto")
+    p.add_argument("--cjk", action="store_true", default=False)
+    return p
+
+
+def _parser_pane_open() -> _StrictParser:
+    p = _make_leaf_parser("termrender pane open")
+    p.add_argument("path", metavar="PATH")
+    p.add_argument("--width", type=int, default=None, metavar="N")
+    p.add_argument("--color", choices=["auto", "on", "off"], default="auto")
+    p.add_argument("--cjk", action="store_true", default=False)
+    p.add_argument("--watch", action="store_true", default=False)
+    p.add_argument("--window", choices=["split", "new"], default="split")
+    return p
+
+
+def _parser_pane_update() -> _StrictParser:
+    p = _make_leaf_parser("termrender pane update")
+    p.add_argument("path", metavar="PATH")
+    p.add_argument("--pane-id", dest="pane_id", required=True, metavar="ID")
+    p.add_argument("--width", type=int, default=None, metavar="N")
+    p.add_argument("--color", choices=["auto", "on", "off"], default="auto")
+    p.add_argument("--cjk", action="store_true", default=False)
+    p.add_argument("--watch", action="store_true", default=False)
+    return p
+
+
+def _print_help(text: str) -> NoReturn:
+    sys.stdout.write(text)
+    sys.stdout.flush()
+    sys.exit(EXIT_OK)
+
+
+def _bad_invocation(message: str) -> NoReturn:
+    _json_error(
+        "bad_invocation",
+        message,
+        received=" ".join(sys.argv[1:]),
+        next_="run with -h for the input schema",
     )
-    root.add_argument("-h", action=_HelpAction, help="show this help")
 
-    subs = root.add_subparsers(dest="branch", metavar="BRANCH")
 
-    # --- doc branch ---
-    doc = subs.add_parser("doc", add_help=False)
-    doc.add_argument("-h", action=_HelpAction, help="show this help")
-    doc_subs = doc.add_subparsers(dest="leaf", metavar="LEAF")
-
-    doc_render = doc_subs.add_parser("render", add_help=False)
-    doc_render.add_argument("-h", action=_HelpAction, help="show this help")
-
-    doc_check = doc_subs.add_parser("check", add_help=False)
-    doc_check.add_argument("-h", action=_HelpAction, help="show this help")
-
-    doc_watch = doc_subs.add_parser("watch", add_help=False)
-    doc_watch.add_argument("-h", action=_HelpAction, help="show this help")
-
-    # --- pane branch ---
-    pane = subs.add_parser("pane", add_help=False)
-    pane.add_argument("-h", action=_HelpAction, help="show this help")
-    pane_subs = pane.add_subparsers(dest="leaf", metavar="LEAF")
-
-    pane_open = pane_subs.add_parser("open", add_help=False)
-    pane_open.add_argument("-h", action=_HelpAction, help="show this help")
-
-    pane_update = pane_subs.add_parser("update", add_help=False)
-    pane_update.add_argument("-h", action=_HelpAction, help="show this help")
-
-    return root, doc, doc_render, doc_check, doc_watch, pane, pane_open, pane_update
-
+# ---------------------------------------------------------------------------
+# Main entry point — manual dispatch
+# ---------------------------------------------------------------------------
 
 def main() -> None:
-    (
-        root, doc_parser, doc_render_parser, doc_check_parser, doc_watch_parser,
-        pane_parser, pane_open_parser, pane_update_parser,
-    ) = _make_parser()
+    argv = sys.argv[1:]
 
-    # Monkey-patch format_help for each parser
-    root.format_help = lambda: _ROOT_HELP
-    doc_parser.format_help = lambda: _DOC_HELP
-    doc_render_parser.format_help = lambda: _DOC_RENDER_HELP
-    doc_check_parser.format_help = lambda: _DOC_CHECK_HELP
-    doc_watch_parser.format_help = lambda: _DOC_WATCH_HELP
-    pane_parser.format_help = lambda: _PANE_HELP
-    pane_open_parser.format_help = lambda: _PANE_OPEN_HELP
-    pane_update_parser.format_help = lambda: _PANE_UPDATE_HELP
-
-    args, extra = root.parse_known_args()
-
-    branch = args.branch
-    leaf = getattr(args, "leaf", None)
-
-    if branch is None:
-        root.print_help()
+    if not argv:
+        sys.stdout.write(_ROOT_HELP)
+        sys.stdout.flush()
         sys.exit(EXIT_INPUT)
+
+    if argv[0] in ("-h", "--help"):
+        _print_help(_ROOT_HELP)
+
+    branch = argv[0]
+    rest = argv[1:]
 
     if branch == "doc":
-        if leaf is None:
-            doc_parser.print_help()
-            sys.exit(EXIT_INPUT)
-        params = _read_stdin_json()
+        if not rest or rest[0] in ("-h", "--help"):
+            _print_help(_DOC_HELP)
+        leaf = rest[0]
+        leaf_argv = rest[1:]
+
         if leaf == "render":
-            _cmd_doc_render(params)
+            if "-h" in leaf_argv or "--help" in leaf_argv:
+                _print_help(_DOC_RENDER_HELP)
+            p = _parser_doc_render()
+            args = p.parse_args(leaf_argv)
+            _cmd_doc_render(args)
+
         elif leaf == "check":
-            _cmd_doc_check(params)
+            if "-h" in leaf_argv or "--help" in leaf_argv:
+                _print_help(_DOC_CHECK_HELP)
+            p = _parser_doc_check()
+            args = p.parse_args(leaf_argv)
+            _cmd_doc_check(args)
+
         elif leaf == "watch":
-            _cmd_doc_watch(params)
+            if "-h" in leaf_argv or "--help" in leaf_argv:
+                _print_help(_DOC_WATCH_HELP)
+            p = _parser_doc_watch()
+            args = p.parse_args(leaf_argv)
+            _cmd_doc_watch(args)
+
         else:
-            doc_parser.print_help()
-            sys.exit(EXIT_INPUT)
+            _bad_invocation(f"unknown doc subcommand: {leaf!r}")
 
     elif branch == "pane":
-        if leaf is None:
-            pane_parser.print_help()
-            sys.exit(EXIT_INPUT)
-        params = _read_stdin_json()
+        if not rest or rest[0] in ("-h", "--help"):
+            _print_help(_PANE_HELP)
+        leaf = rest[0]
+        leaf_argv = rest[1:]
+
         if leaf == "open":
-            _cmd_pane_open(params)
+            if "-h" in leaf_argv or "--help" in leaf_argv:
+                _print_help(_PANE_OPEN_HELP)
+            p = _parser_pane_open()
+            args = p.parse_args(leaf_argv)
+            _cmd_pane_open(args)
+
         elif leaf == "update":
-            _cmd_pane_update(params)
+            if "-h" in leaf_argv or "--help" in leaf_argv:
+                _print_help(_PANE_UPDATE_HELP)
+            p = _parser_pane_update()
+            args = p.parse_args(leaf_argv)
+            _cmd_pane_update(args)
+
         else:
-            pane_parser.print_help()
-            sys.exit(EXIT_INPUT)
+            _bad_invocation(f"unknown pane subcommand: {leaf!r}")
 
     else:
-        root.print_help()
-        sys.exit(EXIT_INPUT)
+        _bad_invocation(f"unknown branch: {branch!r}")
 
 
 if __name__ == "__main__":

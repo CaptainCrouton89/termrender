@@ -142,14 +142,29 @@ Python 3.10+. Three dependencies: [mistune](https://github.com/lepture/mistune) 
 ### CLI
 
 ```bash
-termrender doc.md                    # render a file
-termrender doc.md --width 100        # fixed width
-termrender doc.md --no-color         # strip ANSI codes
-cat doc.md | termrender              # from stdin
-echo '# Hello' | termrender          # inline
+cat doc.md | termrender doc render                        # render a file
+cat doc.md | termrender doc render --width 100            # fixed width
+cat doc.md | termrender doc render --color off            # strip ANSI codes
+cat doc.md | termrender doc render --color on --cjk       # force color + CJK mode
+echo '# Hello' | termrender doc render                    # inline
+
+cat doc.md | termrender doc check                         # validate syntax
+termrender doc watch /path/to/doc.md                      # live-render (interactive)
+termrender doc watch --color on /path/to/doc.md           # live-render with color
 ```
 
-Reads from a file or stdin. Auto-detects terminal width unless you specify `--width`. Respects `NO_COLOR`.
+`doc render` and `doc check` read markdown from stdin. `doc watch` takes the file path as a positional argument. Auto-detects terminal width unless you specify `--width`. Respects `NO_COLOR` with `--color auto` (the default).
+
+For tmux pane management:
+
+```bash
+termrender pane open /path/to/doc.md                      # spawn a side pane
+termrender pane open --watch /path/to/doc.md              # spawn with live-update
+termrender pane open --width 80 --window new /path/to/doc.md
+
+termrender pane update /path/to/new.md --pane-id %23      # update existing pane
+termrender pane update --watch /path/to/doc.md --pane-id %23
+```
 
 ### Python
 
